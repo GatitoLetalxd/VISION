@@ -1,0 +1,219 @@
+# ============================================
+# GITIGNORE - VISION PROJECT
+# Sistema de Detección de Somnolencia
+# ============================================
+
+# ==========================================
+# DEPENDENCIES / NODE_MODULES
+# ==========================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ==========================================
+# PYTHON / VIRTUAL ENVIRONMENTS
+# ==========================================
+venv/
+env/
+ENV/
+.venv/
+*.pyc
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ==========================================
+# BUILD / DIST
+# ==========================================
+dist/
+dist-ssr/
+build/
+*.local
+
+# ==========================================
+# ENVIRONMENT VARIABLES
+# ==========================================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env*.local
+
+# ==========================================
+# LOGS
+# ==========================================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+/tmp/*.log
+*.log.*
+
+# ==========================================
+# EDITOR / IDE
+# ==========================================
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+.project
+.settings/
+.classpath
+
+# ==========================================
+# TESTING
+# ==========================================
+coverage/
+*.coverage
+.nyc_output/
+.cache/
+
+# ==========================================
+# UPLOADS / USER DATA
+# ==========================================
+backend/uploads/profile-photos/*
+!backend/uploads/profile-photos/.gitkeep
+backend/uploads/temp/*
+!backend/uploads/temp/.gitkeep
+
+# ==========================================
+# DATABASE
+# ==========================================
+*.sqlite
+*.sqlite3
+*.db
+*.sql.backup
+
+# ==========================================
+# SSL CERTIFICATES (NO SUBIR A GITHUB!)
+# ==========================================
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx
+backend/certs/
+certs/
+
+# ==========================================
+# PM2
+# ==========================================
+.pm2/
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# ==========================================
+# TEMPORARY FILES
+# ==========================================
+*.tmp
+*.temp
+/tmp/*
+!tmp/.gitkeep
+.cache/
+*.swp
+
+# ==========================================
+# OS SPECIFIC
+# ==========================================
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# ==========================================
+# PACKAGE MANAGER
+# ==========================================
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# ==========================================
+# TYPESCRIPT
+# ==========================================
+*.tsbuildinfo
+
+# ==========================================
+# MISC
+# ==========================================
+.env.backup
+backup/
+*.backup
+*.bak
+*.old
+
+# ==========================================
+# KEEP IMPORTANT DIRECTORIES
+# ==========================================
+!public/models/**
+!src/
+!backend/src/
+
+# ==========================================
+# SECURITY - NEVER COMMIT
+# ==========================================
+# Configuraciones de base de datos con credenciales
+# backend/src/config/database.js  # NO ignorar, pero REVISAR antes de commit
+
+# Tokens y claves API
+.secret
+secrets.json
+credentials.json
+
+# ==========================================
+# PROJECT SPECIFIC
+# ==========================================
+# Scripts temporales de desarrollo
+*.test.sh
+*.dev.sh
+check_access.sh
+simple_check.sh
+abrir_puertos.sh
+
+# Archivos de configuración local
+ecosystem.config.local.cjs
+
