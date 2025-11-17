@@ -249,9 +249,18 @@ const UserManagement: React.FC = () => {
               WebkitTextFillColor: 'transparent',
               backgroundClip: 'text',
               fontWeight: 700,
+              fontSize: {
+                xs: '0.9rem',
+                sm: '1.25rem',
+              },
             }}
           >
-            Gestión de Usuarios
+            <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+              Gestión de Usuarios
+            </Box>
+            <Box component="span" sx={{ display: { xs: 'inline', sm: 'none' } }}>
+              Usuarios
+            </Box>
           </Typography>
           <Tooltip title="Recargar">
             <span>
@@ -282,7 +291,12 @@ const UserManagement: React.FC = () => {
         )}
 
         {/* Estadísticas rápidas */}
-        <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+        <Box sx={{ 
+          display: 'flex', 
+          gap: { xs: 1, sm: 2 }, 
+          mb: { xs: 2, sm: 3 },
+          flexDirection: { xs: 'column', sm: 'row' }
+        }}>
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -291,19 +305,32 @@ const UserManagement: React.FC = () => {
           >
             <Paper
               sx={{
-                p: 3,
+                p: { xs: 2, sm: 2.5, md: 3 },
                 background: 'linear-gradient(145deg, rgba(255, 82, 82, 0.1) 0%, rgba(255, 82, 82, 0.05) 100%)',
                 backdropFilter: 'blur(20px)',
                 border: '1px solid rgba(255, 82, 82, 0.3)',
-                borderRadius: 3,
+                borderRadius: { xs: 2, sm: 3 },
                 textAlign: 'center',
               }}
             >
-              <AdminIcon sx={{ fontSize: 40, color: '#ff5252', mb: 1 }} />
-              <Typography variant="h4" sx={{ color: '#ff5252', fontWeight: 700 }}>
+              <AdminIcon sx={{ fontSize: { xs: 30, sm: 35, md: 40 }, color: '#ff5252', mb: 1 }} />
+              <Typography 
+                variant="h4" 
+                sx={{ 
+                  color: '#ff5252', 
+                  fontWeight: 700,
+                  fontSize: { xs: '1.5rem', sm: '2rem', md: '2.125rem' }
+                }}
+              >
                 {users.filter((u) => u.rol === 'admin').length}
               </Typography>
-              <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
+              <Typography 
+                variant="body2" 
+                sx={{ 
+                  color: 'rgba(255, 255, 255, 0.7)',
+                  fontSize: { xs: '0.75rem', sm: '0.875rem' }
+                }}
+              >
                 Administradores
               </Typography>
             </Paper>
@@ -414,8 +441,13 @@ const UserManagement: React.FC = () => {
           </motion.div>
         </Box>
 
-        {/* Tabla de usuarios */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
+        {/* Tabla de usuarios - Desktop */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }} 
+          animate={{ opacity: 1, y: 0 }} 
+          transition={{ delay: 0.5 }}
+          sx={{ display: { xs: 'none', md: 'block' } }}
+        >
           <TableContainer
             component={Paper}
             elevation={3}
@@ -423,8 +455,9 @@ const UserManagement: React.FC = () => {
               background: 'linear-gradient(145deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%)',
               backdropFilter: 'blur(20px)',
               border: '1px solid rgba(0, 212, 255, 0.2)',
-              borderRadius: 4,
+              borderRadius: { xs: 2, md: 4 },
               boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+              overflowX: 'auto',
             }}
           >
             <Table>
@@ -614,6 +647,126 @@ const UserManagement: React.FC = () => {
             </Table>
           </TableContainer>
         </motion.div>
+
+        {/* Cards de usuarios - Mobile */}
+        <Box sx={{ display: { xs: 'block', md: 'none' }, mt: 2 }}>
+          {loading ? (
+            <Box sx={{ textAlign: 'center', py: 4 }}>
+              <CircularProgress sx={{ color: '#00d4ff' }} />
+              <Typography sx={{ mt: 2, color: 'rgba(255, 255, 255, 0.7)' }}>
+                Cargando usuarios...
+              </Typography>
+            </Box>
+          ) : users.length === 0 ? (
+            <Paper sx={{ p: 4, textAlign: 'center', background: 'rgba(255, 255, 255, 0.03)', borderRadius: 2 }}>
+              <Typography sx={{ color: 'rgba(255, 255, 255, 0.5)' }}>
+                No hay usuarios registrados
+              </Typography>
+            </Paper>
+          ) : (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {users.map((user, index) => (
+                <motion.div
+                  key={user.id_usuario}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                >
+                  <Paper
+                    sx={{
+                      p: 2,
+                      background: 'linear-gradient(145deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%)',
+                      backdropFilter: 'blur(20px)',
+                      border: '1px solid rgba(0, 212, 255, 0.2)',
+                      borderRadius: 2,
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                        <Avatar sx={{ bgcolor: getRoleColor(user.rol) }}>
+                          {getRoleIcon(user.rol)}
+                        </Avatar>
+                        <Box>
+                          <Typography sx={{ color: 'white', fontWeight: 600, fontSize: '0.9rem' }}>
+                            {user.nombre} {user.apellido}
+                          </Typography>
+                          <Typography sx={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.75rem' }}>
+                            {user.correo}
+                          </Typography>
+                        </Box>
+                      </Box>
+                      <Chip
+                        label={getRoleLabel(user.rol)}
+                        size="small"
+                        sx={{
+                          bgcolor: getRoleColor(user.rol),
+                          color: 'white',
+                          fontSize: '0.7rem',
+                        }}
+                      />
+                    </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+                      <Box>
+                        <Typography sx={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.7rem', mb: 0.5 }}>
+                          Estado
+                        </Typography>
+                        <Chip
+                          label={user.activo ? 'Activo' : 'Inactivo'}
+                          size="small"
+                          color={user.activo ? 'success' : 'default'}
+                          sx={{ fontSize: '0.7rem' }}
+                        />
+                      </Box>
+                      <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Select
+                          value={user.rol}
+                          onChange={(e) => handleRoleChange(user.id_usuario, e.target.value, `${user.nombre} ${user.apellido}`)}
+                          disabled={updating}
+                          size="small"
+                          sx={{
+                            color: 'white',
+                            fontSize: '0.7rem',
+                            minWidth: 100,
+                            '& .MuiOutlinedInput-notchedOutline': {
+                              borderColor: 'rgba(0, 212, 255, 0.3)',
+                            },
+                            '&:hover .MuiOutlinedInput-notchedOutline': {
+                              borderColor: 'rgba(0, 212, 255, 0.5)',
+                            },
+                          }}
+                        >
+                          <MenuItem value="admin">Admin</MenuItem>
+                          <MenuItem value="operator">Operador</MenuItem>
+                          <MenuItem value="viewer">Viewer</MenuItem>
+                          <MenuItem value="driver">Driver</MenuItem>
+                        </Select>
+                        <Switch
+                          checked={user.activo}
+                          onChange={() => handleToggleStatus(user.id_usuario, user.activo, `${user.nombre} ${user.apellido}`)}
+                          disabled={updating}
+                          size="small"
+                          sx={{
+                            '& .MuiSwitch-switchBase.Mui-checked': {
+                              color: '#4caf50',
+                            },
+                            '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                              backgroundColor: '#4caf50',
+                            },
+                          }}
+                        />
+                      </Box>
+                    </Box>
+                    {user.ultimo_acceso && (
+                      <Typography sx={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: '0.7rem', mt: 1 }}>
+                        Último acceso: {new Date(user.ultimo_acceso).toLocaleDateString()}
+                      </Typography>
+                    )}
+                  </Paper>
+                </motion.div>
+              ))}
+            </Box>
+          )}
+        </Box>
       </Container>
 
       {/* Dialog de confirmación de eliminación */}

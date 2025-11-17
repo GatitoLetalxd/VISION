@@ -446,8 +446,24 @@ const LiveMonitoring = () => {
             color: '#00d4ff',
             filter: 'drop-shadow(0 0 8px rgba(0, 212, 255, 0.6))' 
           }} />
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontWeight: 700 }}>
-            Monitoreo en Tiempo Real
+          <Typography 
+            variant="h6" 
+            component="div" 
+            sx={{ 
+              flexGrow: 1, 
+              fontWeight: 700,
+              fontSize: {
+                xs: '0.9rem',
+                sm: '1.25rem',
+              },
+            }}
+          >
+            <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+              Monitoreo en Tiempo Real
+            </Box>
+            <Box component="span" sx={{ display: { xs: 'inline', sm: 'none' } }}>
+              Monitoreo
+            </Box>
           </Typography>
 
           <Chip 
@@ -597,25 +613,33 @@ const LiveMonitoring = () => {
         </Grid>
 
         {/* Lista de conductores con métricas en tiempo real */}
-        <Typography variant="h5" sx={{ color: 'white', mb: 3, fontWeight: 700 }}>
+        <Typography 
+          variant="h5" 
+          sx={{ 
+            color: 'white', 
+            mb: { xs: 2, sm: 3 }, 
+            fontWeight: 700,
+            fontSize: { xs: '1rem', sm: '1.5rem', md: '1.75rem' }
+          }}
+        >
           Conductores Monitoreados
         </Typography>
 
         {drivers.length === 0 && (
-          <Alert severity="info" sx={{ mb: 3 }}>
+          <Alert severity="info" sx={{ mb: { xs: 2, sm: 3 } }}>
             No hay conductores registrados en el sistema.
           </Alert>
         )}
 
-        <Grid container spacing={3}>
+        <Grid container spacing={{ xs: 2, sm: 3 }}>
           {Array.from(driverStatuses.values()).map((status) => (
-            <Grid item xs={12} md={6} lg={4} key={status.driver.id}>
+            <Grid item xs={12} sm={6} md={6} lg={4} key={status.driver.id}>
               <Paper
                 component={motion.div}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 sx={{
-                  p: 3,
+                  p: { xs: 2, sm: 2.5, md: 3 },
                   background: status.isOnline 
                     ? 'linear-gradient(135deg, rgba(26, 32, 53, 0.9) 0%, rgba(15, 20, 35, 0.9) 100%)'
                     : 'linear-gradient(135deg, rgba(26, 32, 53, 0.5) 0%, rgba(15, 20, 35, 0.5) 100%)',
@@ -651,11 +675,25 @@ const LiveMonitoring = () => {
                 </Box>
 
                 {/* Info del conductor */}
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="h6" sx={{ color: 'white', fontWeight: 700, mb: 0.5 }}>
+                <Box sx={{ mb: { xs: 1.5, sm: 2 } }}>
+                  <Typography 
+                    variant="h6" 
+                    sx={{ 
+                      color: 'white', 
+                      fontWeight: 700, 
+                      mb: 0.5,
+                      fontSize: { xs: '0.9rem', sm: '1.25rem' }
+                    }}
+                  >
                     {status.driver.nombre}
                   </Typography>
-                  <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.6)' }}>
+                  <Typography 
+                    variant="body2" 
+                    sx={{ 
+                      color: 'rgba(255, 255, 255, 0.6)',
+                      fontSize: { xs: '0.75rem', sm: '0.875rem' }
+                    }}
+                  >
                     Licencia: {status.driver.licencia}
                   </Typography>
                 </Box>
@@ -737,7 +775,13 @@ const LiveMonitoring = () => {
                     {/* Indicadores */}
                     <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
                       <Box sx={{ flex: 1 }}>
-                        <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.6)' }}>
+                        <Typography 
+                          variant="caption" 
+                          sx={{ 
+                            color: 'rgba(255, 255, 255, 0.6)',
+                            fontSize: { xs: '0.65rem', sm: '0.75rem' }
+                          }}
+                        >
                           Ojos
                         </Typography>
                         <Box sx={{ 
@@ -747,13 +791,19 @@ const LiveMonitoring = () => {
                           color: status.metrics.eyesClosed ? '#ff1744' : '#4caf50',
                         }}>
                           <Box sx={{ 
-                            width: 8, 
-                            height: 8, 
+                            width: { xs: 6, sm: 8 }, 
+                            height: { xs: 6, sm: 8 }, 
                             borderRadius: '50%',
                             bgcolor: 'currentColor',
                             boxShadow: '0 0 10px currentColor',
                           }} />
-                          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          <Typography 
+                            variant="body2" 
+                            sx={{ 
+                              fontWeight: 600,
+                              fontSize: { xs: '0.7rem', sm: '0.875rem' }
+                            }}
+                          >
                             {status.metrics.eyesClosed ? 'CERRADOS' : 'Abiertos'}
                           </Typography>
                         </Box>

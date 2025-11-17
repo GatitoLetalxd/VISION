@@ -20,6 +20,8 @@ import {
   MenuItem,
   FormControl,
   InputLabel,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import {
   Videocam as VideocamIcon,
@@ -27,10 +29,11 @@ import {
   Warning as WarningIcon,
   CheckCircle as CheckCircleIcon,
   Error as ErrorIcon,
-  Visibility as VisibilityIcon,
-  VisibilityOff as VisibilityOffIcon,
   ArrowBack as ArrowBackIcon,
   Cameraswitch as CameraswitchIcon,
+  LocationOn as LocationOnIcon,
+  MyLocation as MyLocationIcon,
+  Navigation as NavigationIcon,
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 import BackgroundShapes from '../components/BackgroundShapes';
@@ -38,6 +41,7 @@ import { socketService } from '../services/socket.service';
 import { drowsinessDetectionService } from '../services/drowsinessDetection.service';
 import type { DrowsinessMetrics } from '../services/drowsinessDetection.service';
 import { useDetectionModel } from '../hooks/useDetectionModel';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { DetectionModelSelector } from '../components/DetectionModelSelector';
 import { monitoringService } from '../services/monitoring.service';
 import api from '../config/api';
@@ -70,6 +74,8 @@ interface DetectionStats {
 
 const DrowsinessDetection = () => {
   const navigate = useNavigate();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -77,14 +83,11 @@ const DrowsinessDetection = () => {
   // Hook del sistema hibrido
   const {
     currentModel,
-    availableModels,
-    loading: modelsLoading,
     sessionId,
     changeModel,
     startSession,
     endSession,
-    isMediaPipe,
-    isFaceApi
+    isMediaPipe
   } = useDetectionModel();
 
   const [isDetecting, setIsDetecting] = useState(false);
@@ -94,8 +97,12 @@ const DrowsinessDetection = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentAlert, setCurrentAlert] = useState<AlertEvent | null>(null);
-  const [recentEvents, setRecentEvents] = useState<DrowsinessEvent[]>([]);
   const [detectionMetrics, setDetectionMetrics] = useState<DrowsinessMetrics | null>(null);
+  // Estado para GPS
+  const [gpsLocation, setGpsLocation] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
+  const [gpsError, setGpsError] = useState<string | null>(null);
+  const [gpsWatching, setGpsWatching] = useState<boolean>(false);
+  const gpsWatchIdRef = useRef<number | null>(null);
   const detectionIntervalRef = useRef<number | null>(null);
   const [stats, setStats] = useState<DetectionStats>({
     totalEvents: 0,
@@ -107,6 +114,11 @@ const DrowsinessDetection = () => {
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [userId, setUserId] = useState<number | null>(null);
   const [videoAspectRatio, setVideoAspectRatio] = useState<number>(16 / 9); // Aspect ratio por defecto 16:9
+  const [previousModel, setPreviousModel] = useState<'face-api' | 'mediapipe' | null>(null); // Modelo antes de perder conexión
+  const [networkNotification, setNetworkNotification] = useState<{ type: 'error' | 'success' | 'warning' | null; message: string }>({ type: null, message: '' });
+
+  // Hook para detectar estado de conexión
+  const { isOnline, wasOffline } = useNetworkStatus();
 
   // Contadores de tiempo para eventos (en frames)
   const eyesClosedTimeRef = useRef<number>(0);
@@ -138,7 +150,6 @@ const DrowsinessDetection = () => {
     // Escuchar eventos de detección
     const handleDrowsinessEvent = (event: DrowsinessEvent) => {
       console.log('📊 Evento de somnolencia:', event);
-      setRecentEvents((prev) => [event, ...prev.slice(0, 9)]); // Mantener últimos 10
       
       // Actualizar estadísticas
       setStats((prev) => ({
@@ -171,8 +182,55 @@ const DrowsinessDetection = () => {
       socketService.off('drowsiness_event', handleDrowsinessEvent);
       socketService.off('alert_event', handleAlertEvent);
       stopCamera();
+      // Detener seguimiento GPS
+      if (gpsWatchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(gpsWatchIdRef.current);
+        gpsWatchIdRef.current = null;
+      }
     };
   }, []);
+
+  // Efecto para manejar cambios en el estado de conexión
+  useEffect(() => {
+    if (!isOnline) {
+      // Se perdió la conexión
+      setNetworkNotification({
+        type: 'error',
+        message: 'Conexión a internet perdida. Cambiando a modo offline con face-api.js'
+      });
+
+      // Si el modelo actual es MediaPipe, cambiar automáticamente a face-api.js
+      if (isMediaPipe && isDetecting) {
+        setPreviousModel(currentModel); // Guardar el modelo anterior
+        changeModel('face-api').catch((error) => {
+          console.error('Error cambiando a face-api:', error);
+        });
+      }
+    } else if (wasOffline) {
+      // Se recuperó la conexión
+      setNetworkNotification({
+        type: 'success',
+        message: 'Conexión a internet recuperada'
+      });
+
+      // Si había un modelo anterior guardado y era MediaPipe, ofrecer volver a él
+      if (previousModel === 'mediapipe' && currentModel === 'face-api') {
+        // Opcional: volver automáticamente al modelo anterior
+        // O dejar que el usuario decida
+        setTimeout(() => {
+          setNetworkNotification({
+            type: 'warning',
+            message: 'Puedes volver a MediaPipe desde la configuración'
+          });
+        }, 2000);
+      }
+
+      // Limpiar notificación después de 5 segundos
+      setTimeout(() => {
+        setNetworkNotification({ type: null, message: '' });
+      }, 5000);
+    }
+  }, [isOnline, wasOffline, isMediaPipe, isDetecting, currentModel, previousModel, changeModel]);
 
   const enumerateCameras = async () => {
     try {
@@ -513,9 +571,6 @@ const DrowsinessDetection = () => {
 
     console.log('🔄 Iniciando loop de detección...');
     
-    // Variable local para controlar el loop (el estado React puede no estar actualizado)
-    let isRunning = true;
-    
     // Loop de detección cada 100ms (10 FPS)
     detectionIntervalRef.current = window.setInterval(async () => {
       if (!videoRef.current || !canvasRef.current) {
@@ -761,19 +816,65 @@ const DrowsinessDetection = () => {
     }
   };
 
-  const getEventIcon = (tipo: string) => {
-    switch (tipo) {
-      case 'drowsiness_detected':
-        return '😴';
-      case 'yawn_detected':
-        return '🥱';
-      case 'eyes_closed':
-        return '👁️';
-      case 'distraction_detected':
-        return '⚠️';
-      default:
-        return '📊';
+  // Funciones para GPS
+  const startGPS = () => {
+    if (!navigator.geolocation) {
+      setGpsError('Geolocalización no está disponible en este navegador');
+      return;
     }
+
+    setGpsWatching(true);
+    setGpsError(null);
+
+    const options: PositionOptions = {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0,
+    };
+
+    // Obtener posición inicial
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setGpsLocation({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          accuracy: position.coords.accuracy || 0,
+        });
+      },
+      (error) => {
+        setGpsError(`Error al obtener ubicación: ${error.message}`);
+        setGpsWatching(false);
+      },
+      options
+    );
+
+    // Iniciar seguimiento continuo
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        setGpsLocation({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          accuracy: position.coords.accuracy || 0,
+        });
+      },
+      (error) => {
+        setGpsError(`Error en seguimiento: ${error.message}`);
+        setGpsWatching(false);
+      },
+      options
+    );
+
+    gpsWatchIdRef.current = watchId;
+  };
+
+  const stopGPS = () => {
+    if (gpsWatchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(gpsWatchIdRef.current);
+      gpsWatchIdRef.current = null;
+    }
+    setGpsWatching(false);
+    setGpsLocation(null);
+    setGpsError(null);
   };
 
   return (
@@ -829,35 +930,58 @@ const DrowsinessDetection = () => {
               WebkitTextFillColor: 'transparent',
               backgroundClip: 'text',
               fontWeight: 700,
+              fontSize: {
+                xs: '1.1rem',
+                sm: '1.5rem',
+                md: '2.125rem',
+              },
             }}
           >
-            Detección de Somnolencia en Tiempo Real
+            <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+              Detección de Somnolencia en Tiempo Real
+            </Box>
+            <Box component="span" sx={{ display: { xs: 'inline', sm: 'none' } }}>
+              Detección en Vivo
+            </Box>
           </Typography>
-          <Box sx={{ ml: 'auto' }}>
+          <Box sx={{ ml: 'auto', display: 'flex', gap: 1, alignItems: 'center' }}>
+            <Chip
+              icon={isOnline ? <CheckCircleIcon /> : <ErrorIcon />}
+              label={isOnline ? 'En línea' : 'Sin conexión'}
+              color={isOnline ? 'success' : 'error'}
+              sx={{ fontWeight: 600 }}
+            />
             <Chip
               icon={socketService.isConnected() ? <CheckCircleIcon /> : <ErrorIcon />}
-              label={socketService.isConnected() ? 'Conectado' : 'Desconectado'}
+              label={socketService.isConnected() ? 'Socket conectado' : 'Socket desconectado'}
               color={socketService.isConnected() ? 'success' : 'error'}
               sx={{ fontWeight: 600 }}
             />
           </Box>
         </Box>
 
-        <Grid container spacing={3}>
+        <Grid container spacing={{ xs: 2, sm: 3 }}>
           {/* Video Feed */}
           <Grid item xs={12} md={8}>
             <Paper
               elevation={3}
               sx={{
-                p: 3,
+                p: { xs: 1.5, sm: 2, md: 3 },
                 background: 'linear-gradient(145deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%)',
                 backdropFilter: 'blur(20px)',
                 border: '1px solid rgba(0, 212, 255, 0.2)',
-                borderRadius: 4,
+                borderRadius: { xs: 2, md: 4 },
                 boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
               }}
             >
-              <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Box sx={{ 
+                mb: { xs: 2, sm: 3 }, 
+                display: 'flex', 
+                flexDirection: { xs: 'column', sm: 'row' },
+                justifyContent: 'space-between', 
+                alignItems: { xs: 'stretch', sm: 'center' },
+                gap: { xs: 1.5, sm: 2 }
+              }}>
                 <Typography
                   variant="h6"
                   sx={{
@@ -866,17 +990,28 @@ const DrowsinessDetection = () => {
                     WebkitTextFillColor: 'transparent',
                     backgroundClip: 'text',
                     fontWeight: 600,
+                    fontSize: { xs: '0.9rem', sm: '1.25rem' },
                   }}
                 >
-                  <VideocamIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                  <VideocamIcon sx={{ mr: 1, verticalAlign: 'middle', fontSize: { xs: '1rem', sm: '1.5rem' } }} />
                   Video en Vivo
                 </Typography>
-                <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                <Box sx={{ 
+                  display: 'flex', 
+                  gap: { xs: 1, sm: 2 }, 
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  width: { xs: '100%', sm: 'auto' },
+                  justifyContent: { xs: 'space-between', sm: 'flex-start' }
+                }}>
                   <Chip
                     label={`Modelo: ${currentModel === 'face-api' ? 'face-api.js' : 'MediaPipe'}`}
                     color={isMediaPipe ? 'secondary' : 'primary'}
                     size="small"
-                    sx={{ fontWeight: 600 }}
+                    sx={{ 
+                      fontWeight: 600,
+                      fontSize: { xs: '0.65rem', sm: '0.75rem' },
+                    }}
                   />
                   <Button
                     variant="outlined"
@@ -886,22 +1021,25 @@ const DrowsinessDetection = () => {
                     sx={{
                       borderColor: 'rgba(0, 212, 255, 0.3)',
                       color: 'white',
+                      fontSize: { xs: '0.7rem', sm: '0.875rem' },
+                      padding: { xs: '4px 8px', sm: '6px 16px' },
                       '&:hover': {
                         borderColor: 'rgba(0, 212, 255, 0.6)',
                         background: 'rgba(0, 212, 255, 0.1)',
                       },
                     }}
                   >
-                    {showModelSelector ? 'Ocultar Config' : 'Cambiar Modelo'}
+                    {showModelSelector ? 'Ocultar' : 'Cambiar'}
                   </Button>
                 </Box>
-                <Box>
+                <Box sx={{ width: { xs: '100%', sm: 'auto' } }}>
                   {!isDetecting ? (
                     <Button
                       component={motion.button}
                       whileHover={{ scale: 1.05, boxShadow: '0 0 40px rgba(0, 212, 255, 0.6)' }}
                       whileTap={{ scale: 0.98 }}
                       variant="contained"
+                      fullWidth={isMobile}
                       startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <VideocamIcon />}
                       onClick={startCamera}
                       disabled={loading}
@@ -909,6 +1047,9 @@ const DrowsinessDetection = () => {
                         background: 'linear-gradient(135deg, #00d4ff 0%, #7b2ff7 100%)',
                         boxShadow: '0 8px 25px rgba(0, 212, 255, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)',
                         border: '1px solid rgba(255, 255, 255, 0.1)',
+                        fontSize: { xs: '0.8rem', sm: '0.875rem' },
+                        padding: { xs: '8px 16px', sm: '10px 22px' },
+                        minHeight: { xs: '44px', sm: 'auto' }, // Tamaño táctil mínimo
                       }}
                     >
                       {loading ? 'Iniciando...' : 'Iniciar Detección'}
@@ -933,6 +1074,22 @@ const DrowsinessDetection = () => {
                 <Alert severity="error" sx={{ mb: 2 }}>
                   <AlertTitle>Error</AlertTitle>
                   {error}
+                </Alert>
+              )}
+
+              {/* Notificación de estado de red */}
+              {networkNotification.type && (
+                <Alert 
+                  severity={networkNotification.type === 'error' ? 'error' : networkNotification.type === 'success' ? 'success' : 'warning'} 
+                  sx={{ mb: 2 }}
+                  onClose={() => setNetworkNotification({ type: null, message: '' })}
+                >
+                  <AlertTitle>
+                    {networkNotification.type === 'error' ? 'Sin Conexión' : 
+                     networkNotification.type === 'success' ? 'Conexión Restaurada' : 
+                     'Información'}
+                  </AlertTitle>
+                  {networkNotification.message}
                 </Alert>
               )}
 
@@ -1556,34 +1713,35 @@ const DrowsinessDetection = () => {
 
           {/* Statistics Panel */}
           <Grid item xs={12} md={4}>
-            <Stack spacing={2}>
+            <Stack spacing={{ xs: 1.5, sm: 2 }}>
               {/* Stats Card */}
               <Paper
                 elevation={3}
                 sx={{
-                  p: 3,
+                  p: { xs: 2, sm: 2.5, md: 3 },
                   background: 'linear-gradient(145deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%)',
                   backdropFilter: 'blur(20px)',
                   border: '1px solid rgba(0, 212, 255, 0.2)',
-                  borderRadius: 4,
+                  borderRadius: { xs: 2, md: 4 },
                   boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2)',
                 }}
               >
                 <Typography
                   variant="h6"
                   sx={{
-                    mb: 2,
+                    mb: { xs: 1.5, sm: 2 },
                     background: 'linear-gradient(135deg, #00d4ff 0%, #00ffea 50%, #7b2ff7 100%)',
                     WebkitBackgroundClip: 'text',
                     WebkitTextFillColor: 'transparent',
                     backgroundClip: 'text',
                     fontWeight: 600,
+                    fontSize: { xs: '0.9rem', sm: '1.25rem' },
                   }}
                 >
                   Estadísticas de Sesión
                 </Typography>
 
-                <Grid container spacing={2}>
+                <Grid container spacing={{ xs: 1, sm: 2 }}>
                   <Grid item xs={6}>
                     <Card
                       sx={{
@@ -1591,11 +1749,24 @@ const DrowsinessDetection = () => {
                         border: '1px solid rgba(0, 212, 255, 0.3)',
                       }}
                     >
-                      <CardContent sx={{ textAlign: 'center' }}>
-                        <Typography variant="h4" sx={{ color: '#00d4ff', fontWeight: 700 }}>
+                      <CardContent sx={{ textAlign: 'center', p: { xs: 1, sm: 1.5, md: 2 } }}>
+                        <Typography 
+                          variant="h4" 
+                          sx={{ 
+                            color: '#00d4ff', 
+                            fontWeight: 700,
+                            fontSize: { xs: '1.25rem', sm: '1.75rem', md: '2.125rem' }
+                          }}
+                        >
                           {stats.totalEvents}
                         </Typography>
-                        <Typography variant="caption" sx={{ color: 'white' }}>
+                        <Typography 
+                          variant="caption" 
+                          sx={{ 
+                            color: 'white',
+                            fontSize: { xs: '0.65rem', sm: '0.75rem' }
+                          }}
+                        >
                           Total Eventos
                         </Typography>
                       </CardContent>
@@ -1655,88 +1826,240 @@ const DrowsinessDetection = () => {
                 </Grid>
               </Paper>
 
-              {/* Recent Events */}
+              {/* GPS Navigation */}
               <Paper
                 elevation={3}
                 sx={{
-                  p: 3,
+                  p: { xs: 2, sm: 2.5, md: 3 },
                   background: 'linear-gradient(145deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%)',
                   backdropFilter: 'blur(20px)',
                   border: '1px solid rgba(0, 212, 255, 0.2)',
-                  borderRadius: 4,
+                  borderRadius: { xs: 2, md: 4 },
                   boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2)',
-                  maxHeight: '400px',
-                  overflow: 'auto',
                 }}
               >
-                <Typography
-                  variant="h6"
-                  sx={{
-                    mb: 2,
-                    background: 'linear-gradient(135deg, #00d4ff 0%, #00ffea 50%, #7b2ff7 100%)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    backgroundClip: 'text',
-                    fontWeight: 600,
-                  }}
-                >
-                  Eventos Recientes
-                </Typography>
-
-                {recentEvents.length === 0 ? (
-                  <Typography sx={{ color: 'rgba(255, 255, 255, 0.5)', textAlign: 'center', py: 2 }}>
-                    No hay eventos registrados
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                  <Typography
+                    variant="h6"
+                    sx={{
+                      background: 'linear-gradient(135deg, #00d4ff 0%, #00ffea 50%, #7b2ff7 100%)',
+                      WebkitBackgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent',
+                      backgroundClip: 'text',
+                      fontWeight: 600,
+                      fontSize: { xs: '0.9rem', sm: '1.25rem' },
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1,
+                    }}
+                  >
+                    <NavigationIcon />
+                    Navegación GPS
                   </Typography>
-                ) : (
-                  <Stack spacing={1}>
-                    {recentEvents.map((event) => (
-                      <motion.div
-                        key={event.id_evento}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
+                  <Button
+                    variant={gpsWatching ? 'contained' : 'outlined'}
+                    color={gpsWatching ? 'error' : 'primary'}
+                    size="small"
+                    onClick={gpsWatching ? stopGPS : startGPS}
+                    startIcon={gpsWatching ? <MyLocationIcon /> : <LocationOnIcon />}
+                    sx={{
+                      fontSize: { xs: '0.7rem', sm: '0.875rem' },
+                      padding: { xs: '4px 8px', sm: '6px 16px' },
+                    }}
+                  >
+                    {gpsWatching ? 'Detener' : 'Iniciar'}
+                  </Button>
+                </Box>
+
+                {gpsError && (
+                  <Alert severity="error" sx={{ mb: 2, fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
+                    {gpsError}
+                  </Alert>
+                )}
+
+                {gpsLocation ? (
+                  <Stack spacing={2}>
+                    {/* Mapa embebido */}
+                    <Box
+                      sx={{
+                        width: '100%',
+                        height: { xs: 200, sm: 250, md: 300 },
+                        borderRadius: 2,
+                        overflow: 'hidden',
+                        border: '2px solid rgba(0, 212, 255, 0.3)',
+                        position: 'relative',
+                      }}
+                    >
+                      <iframe
+                        width="100%"
+                        height="100%"
+                        frameBorder="0"
+                        style={{ border: 0 }}
+                        src={`https://www.openstreetmap.org/export/embed.html?bbox=${gpsLocation.lng - 0.01},${gpsLocation.lat - 0.01},${gpsLocation.lng + 0.01},${gpsLocation.lat + 0.01}&layer=mapnik&marker=${gpsLocation.lat},${gpsLocation.lng}`}
+                        allowFullScreen
+                        title="Ubicación GPS"
+                      />
+                      <Box
+                        sx={{
+                          position: 'absolute',
+                          top: 8,
+                          right: 8,
+                          bgcolor: 'rgba(0, 0, 0, 0.7)',
+                          color: '#00d4ff',
+                          px: 1,
+                          py: 0.5,
+                          borderRadius: 1,
+                          fontSize: { xs: '0.7rem', sm: '0.75rem' },
+                          fontWeight: 700,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 0.5,
+                        }}
                       >
+                        <MyLocationIcon sx={{ fontSize: { xs: '0.9rem', sm: '1rem' } }} />
+                        EN VIVO
+                      </Box>
+                    </Box>
+
+                    {/* Información de coordenadas */}
+                    <Grid container spacing={1.5}>
+                      <Grid item xs={6}>
                         <Card
                           sx={{
-                            background: 'rgba(255, 255, 255, 0.03)',
-                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                            background: 'rgba(0, 212, 255, 0.1)',
+                            border: '1px solid rgba(0, 212, 255, 0.3)',
                           }}
                         >
-                          <CardContent sx={{ py: 1.5, px: 2, '&:last-child': { pb: 1.5 } }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <Typography sx={{ fontSize: '1.5rem' }}>
-                                {getEventIcon(event.tipo_evento)}
-                              </Typography>
-                              <Box sx={{ flex: 1 }}>
-                                <Typography variant="body2" sx={{ color: 'white', fontWeight: 500 }}>
-                                  {event.tipo_evento.replace('_', ' ').toUpperCase()}
-                                </Typography>
-                                <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.6)' }}>
-                                  Confianza: {(event.confianza * 100).toFixed(0)}% •{' '}
-                                  {new Date(event.timestamp).toLocaleTimeString()}
-                                </Typography>
-                              </Box>
-                              <Chip
-                                label={event.nivel_severidad}
-                                size="small"
-                                sx={{
-                                  backgroundColor:
-                                    event.nivel_severidad === 'critical'
-                                      ? '#ff1744'
-                                      : event.nivel_severidad === 'high'
-                                      ? '#ff5252'
-                                      : event.nivel_severidad === 'medium'
-                                      ? '#ffa726'
-                                      : '#42a5f5',
-                                  color: 'white',
-                                  fontWeight: 600,
-                                }}
-                              />
-                            </Box>
+                          <CardContent sx={{ p: { xs: 1, sm: 1.5 }, textAlign: 'center' }}>
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                color: 'rgba(255, 255, 255, 0.7)',
+                                fontSize: { xs: '0.65rem', sm: '0.75rem' },
+                                display: 'block',
+                                mb: 0.5,
+                              }}
+                            >
+                              Latitud
+                            </Typography>
+                            <Typography
+                              sx={{
+                                color: '#00d4ff',
+                                fontWeight: 700,
+                                fontSize: { xs: '0.8rem', sm: '0.9rem' },
+                              }}
+                            >
+                              {gpsLocation.lat.toFixed(6)}
+                            </Typography>
                           </CardContent>
                         </Card>
-                      </motion.div>
-                    ))}
+                      </Grid>
+                      <Grid item xs={6}>
+                        <Card
+                          sx={{
+                            background: 'rgba(0, 255, 234, 0.1)',
+                            border: '1px solid rgba(0, 255, 234, 0.3)',
+                          }}
+                        >
+                          <CardContent sx={{ p: { xs: 1, sm: 1.5 }, textAlign: 'center' }}>
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                color: 'rgba(255, 255, 255, 0.7)',
+                                fontSize: { xs: '0.65rem', sm: '0.75rem' },
+                                display: 'block',
+                                mb: 0.5,
+                              }}
+                            >
+                              Longitud
+                            </Typography>
+                            <Typography
+                              sx={{
+                                color: '#00ffea',
+                                fontWeight: 700,
+                                fontSize: { xs: '0.8rem', sm: '0.9rem' },
+                              }}
+                            >
+                              {gpsLocation.lng.toFixed(6)}
+                            </Typography>
+                          </CardContent>
+                        </Card>
+                      </Grid>
+                      <Grid item xs={12}>
+                        <Card
+                          sx={{
+                            background: 'rgba(123, 47, 247, 0.1)',
+                            border: '1px solid rgba(123, 47, 247, 0.3)',
+                          }}
+                        >
+                          <CardContent sx={{ p: { xs: 1, sm: 1.5 }, textAlign: 'center' }}>
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                color: 'rgba(255, 255, 255, 0.7)',
+                                fontSize: { xs: '0.65rem', sm: '0.75rem' },
+                                display: 'block',
+                                mb: 0.5,
+                              }}
+                            >
+                              Precisión
+                            </Typography>
+                            <Typography
+                              sx={{
+                                color: '#7b2ff7',
+                                fontWeight: 700,
+                                fontSize: { xs: '0.8rem', sm: '0.9rem' },
+                              }}
+                            >
+                              ±{gpsLocation.accuracy.toFixed(0)} metros
+                            </Typography>
+                          </CardContent>
+                        </Card>
+                      </Grid>
+                    </Grid>
+
+                    {/* Botón para abrir en Google Maps */}
+                    <Button
+                      variant="outlined"
+                      fullWidth
+                      startIcon={<LocationOnIcon />}
+                      href={`https://www.google.com/maps?q=${gpsLocation.lat},${gpsLocation.lng}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      sx={{
+                        borderColor: '#00d4ff',
+                        color: '#00d4ff',
+                        fontSize: { xs: '0.75rem', sm: '0.875rem' },
+                        padding: { xs: '6px 16px', sm: '8px 22px' },
+                        minHeight: { xs: '44px', sm: 'auto' },
+                        '&:hover': {
+                          borderColor: '#00ffea',
+                          background: 'rgba(0, 212, 255, 0.1)',
+                        },
+                      }}
+                    >
+                      Abrir en Google Maps
+                    </Button>
                   </Stack>
+                ) : (
+                  <Box
+                    sx={{
+                      textAlign: 'center',
+                      py: { xs: 3, sm: 4 },
+                      color: 'rgba(255, 255, 255, 0.5)',
+                    }}
+                  >
+                    <LocationOnIcon sx={{ fontSize: { xs: 48, sm: 64 }, mb: 2, opacity: 0.5 }} />
+                    <Typography sx={{ fontSize: { xs: '0.8rem', sm: '0.875rem' }, mb: 1 }}>
+                      Presiona "Iniciar" para comenzar el seguimiento GPS
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      sx={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: { xs: '0.7rem', sm: '0.75rem' } }}
+                    >
+                      Se requiere permiso de ubicación
+                    </Typography>
+                  </Box>
                 )}
               </Paper>
             </Stack>

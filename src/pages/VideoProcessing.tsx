@@ -530,8 +530,24 @@ const VideoProcessing = () => {
             color: '#7b2ff7',
             filter: 'drop-shadow(0 0 8px rgba(123, 47, 247, 0.6))' 
           }} />
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontWeight: 700 }}>
-            Procesamiento de Video - Análisis Detallado
+          <Typography 
+            variant="h6" 
+            component="div" 
+            sx={{ 
+              flexGrow: 1, 
+              fontWeight: 700,
+              fontSize: {
+                xs: '0.9rem',
+                sm: '1.25rem',
+              },
+            }}
+          >
+            <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+              Procesamiento de Video - Análisis Detallado
+            </Box>
+            <Box component="span" sx={{ display: { xs: 'inline', sm: 'none' } }}>
+              Análisis de Video
+            </Box>
           </Typography>
 
           <IconButton color="inherit" onClick={handleMenuOpen}>

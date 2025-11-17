@@ -17,6 +17,8 @@ import {
   CardContent,
   Chip,
   LinearProgress,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import { motion } from 'framer-motion';
 import LogoutIcon from '@mui/icons-material/Logout';
@@ -58,6 +60,8 @@ interface OnlineDriver {
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [userName, setUserName] = useState('Usuario');
   const [userRole, setUserRole] = useState<string>('viewer');
@@ -370,9 +374,19 @@ const Dashboard = () => {
               textAlign: 'center',
               mb: 1,
               fontWeight: 700,
+              fontSize: {
+                xs: '1.1rem',
+                sm: '1.5rem',
+                md: '2.125rem',
+              },
             }}
           >
-            Panel de Control - VISION-TGM
+            <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+              Panel de Control - VISION-TGM
+            </Box>
+            <Box component="span" sx={{ display: { xs: 'inline', sm: 'none' } }}>
+              VISION-TGM
+            </Box>
           </Typography>
           <Typography 
             variant="body1" 
@@ -393,22 +407,36 @@ const Dashboard = () => {
                   background: 'linear-gradient(145deg, rgba(0, 212, 255, 0.15) 0%, rgba(0, 212, 255, 0.05) 100%)',
                   backdropFilter: 'blur(20px)',
                   border: '1px solid rgba(0, 212, 255, 0.3)',
-                  borderRadius: 3,
+                  borderRadius: { xs: 2, sm: 3 },
                   boxShadow: '0 8px 32px rgba(0, 212, 255, 0.2)',
                   cursor: 'pointer',
                 }}>
-                  <CardContent>
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                      <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
+                  <CardContent sx={{ p: { xs: 2, sm: 2.5, md: 3 } }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: { xs: 1.5, sm: 2 } }}>
+                      <Typography 
+                        variant="body2" 
+                        sx={{ 
+                          color: 'rgba(255, 255, 255, 0.7)',
+                          fontSize: { xs: '0.75rem', sm: '0.875rem' }
+                        }}
+                      >
                         Cámaras Activas
                       </Typography>
-                      <VideocamIcon sx={{ color: '#00d4ff', filter: 'drop-shadow(0 0 8px rgba(0, 212, 255, 0.6))' }} />
+                      <VideocamIcon sx={{ 
+                        color: '#00d4ff', 
+                        filter: 'drop-shadow(0 0 8px rgba(0, 212, 255, 0.6))',
+                        fontSize: { xs: '1.25rem', sm: '1.5rem', md: '1.75rem' }
+                      }} />
                     </Box>
-                    <Typography variant="h3" sx={{ 
-                      color: '#00d4ff',
-                      fontWeight: 700,
-                      textShadow: '0 0 20px rgba(0, 212, 255, 0.5)',
-                    }}>
+                    <Typography 
+                      variant="h3" 
+                      sx={{ 
+                        color: '#00d4ff',
+                        fontWeight: 700,
+                        textShadow: '0 0 20px rgba(0, 212, 255, 0.5)',
+                        fontSize: { xs: '1.5rem', sm: '2rem', md: '3rem' }
+                      }}
+                    >
                       {stats.activeCameras}
                     </Typography>
                     <Chip 
@@ -552,49 +580,67 @@ const Dashboard = () => {
           </Grid>
 
           {/* Sección Principal */}
-          <Grid container spacing={3}>
+          <Grid container spacing={{ xs: 2, sm: 3 }}>
             {/* Panel de Detección en Vivo */}
             <Grid item xs={12} md={8}>
               <Paper sx={{
-                p: 4,
+                p: { xs: 2, sm: 3, md: 4 },
                 background: 'linear-gradient(145deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%)',
                 backdropFilter: 'blur(20px)',
                 border: '1px solid rgba(0, 212, 255, 0.2)',
-                borderRadius: 4,
+                borderRadius: { xs: 2, md: 4 },
                 boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
-                minHeight: 400,
+                minHeight: { xs: 300, md: 400 },
               }}>
                 <Box sx={{ textAlign: 'center' }}>
                   <VisibilityIcon sx={{ 
-                    fontSize: 80, 
+                    fontSize: { xs: 50, sm: 60, md: 80 }, 
                     color: '#00d4ff',
                     filter: 'drop-shadow(0 0 20px rgba(0, 212, 255, 0.6))',
-                    mb: 3,
+                    mb: { xs: 2, sm: 3 },
                   }} />
-                  <Typography variant="h5" sx={{ color: 'white', mb: 2, fontWeight: 600 }}>
+                  <Typography 
+                    variant="h5" 
+                    sx={{ 
+                      color: 'white', 
+                      mb: { xs: 1.5, sm: 2 }, 
+                      fontWeight: 600,
+                      fontSize: { xs: '1rem', sm: '1.25rem', md: '1.5rem' }
+                    }}
+                  >
                     Detección de Somnolencia en Tiempo Real
                   </Typography>
-                  <Typography variant="body1" sx={{ color: 'rgba(255, 255, 255, 0.7)', mb: 4 }}>
+                  <Typography 
+                    variant="body1" 
+                    sx={{ 
+                      color: 'rgba(255, 255, 255, 0.7)', 
+                      mb: { xs: 3, sm: 4 },
+                      fontSize: { xs: '0.8rem', sm: '0.875rem', md: '1rem' },
+                      px: { xs: 1, sm: 0 }
+                    }}
+                  >
                     Monitorea conductores en tiempo real con análisis de video basado en IA
                     </Typography>
-                    <Button
+                  <Button
                       component={motion.button}
                     whileHover={{ scale: 1.05, boxShadow: '0 0 40px rgba(255, 82, 82, 0.6)' }}
                       whileTap={{ scale: 0.95 }}
                       variant="contained"
                     size="large"
+                    fullWidth={isMobile}
                     startIcon={<CameraAltIcon />}
                     onClick={() => navigate('/detection')}
                       sx={{
                       background: 'linear-gradient(135deg, #ff5252 0%, #ff006e 100%)',
                         color: 'white',
                         textTransform: 'none',
-                      fontSize: '1.2rem',
+                      fontSize: { xs: '0.9rem', sm: '1rem', md: '1.2rem' },
                       fontWeight: 600,
-                      py: 2,
-                      px: 5,
+                      py: { xs: 1.5, sm: 2 },
+                      px: { xs: 3, sm: 5 },
                       boxShadow: '0 8px 25px rgba(255, 82, 82, 0.4)',
                       border: '1px solid rgba(255, 255, 255, 0.1)',
+                      minHeight: { xs: '44px', sm: 'auto' },
                     }}
                   >
                     Iniciar Detección en Vivo
@@ -605,15 +651,15 @@ const Dashboard = () => {
 
             {/* Panel Lateral */}
             <Grid item xs={12} md={4}>
-              <Grid container spacing={3}>
+              <Grid container spacing={{ xs: 2, sm: 3 }}>
                 {/* Procesamiento de Video */}
                 <Grid item xs={12}>
                   <Paper sx={{
-                    p: 3,
+                    p: { xs: 2, sm: 2.5, md: 3 },
                     background: 'linear-gradient(145deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%)',
                     backdropFilter: 'blur(20px)',
                     border: '1px solid rgba(0, 255, 234, 0.2)',
-                    borderRadius: 4,
+                    borderRadius: { xs: 2, md: 4 },
                       cursor: 'pointer',
                     transition: 'all 0.3s ease',
                       '&:hover': {
@@ -622,13 +668,31 @@ const Dashboard = () => {
                       boxShadow: '0 12px 40px rgba(0, 255, 234, 0.3)',
                       },
                   }} onClick={() => navigate('/video-processing')}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                      <PlayCircleOutlineIcon sx={{ color: '#00ffea', filter: 'drop-shadow(0 0 8px rgba(0, 255, 234, 0.6))', mr: 1, fontSize: 32 }} />
-                      <Typography variant="h6" sx={{ color: 'white' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', mb: { xs: 1.5, sm: 2 } }}>
+                      <PlayCircleOutlineIcon sx={{ 
+                        color: '#00ffea', 
+                        filter: 'drop-shadow(0 0 8px rgba(0, 255, 234, 0.6))', 
+                        mr: 1, 
+                        fontSize: { xs: 24, sm: 28, md: 32 }
+                      }} />
+                      <Typography 
+                        variant="h6" 
+                        sx={{ 
+                          color: 'white',
+                          fontSize: { xs: '0.9rem', sm: '1.25rem' }
+                        }}
+                      >
                         Procesamiento
                       </Typography>
                     </Box>
-                    <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)', mb: 2 }}>
+                    <Typography 
+                      variant="body2" 
+                      sx={{ 
+                        color: 'rgba(255, 255, 255, 0.7)', 
+                        mb: { xs: 1.5, sm: 2 },
+                        fontSize: { xs: '0.75rem', sm: '0.875rem' }
+                      }}
+                    >
                       Analiza videos grabados con IA - Análisis Detallado (Nivel 2)
                     </Typography>
                     <Button 
@@ -637,6 +701,9 @@ const Dashboard = () => {
                       sx={{
                         borderColor: '#00ffea',
                         color: '#00ffea',
+                        fontSize: { xs: '0.8rem', sm: '0.875rem' },
+                        padding: { xs: '6px 16px', sm: '8px 22px' },
+                        minHeight: { xs: '44px', sm: 'auto' },
                         '&:hover': {
                           borderColor: '#00ffea',
                           background: 'rgba(0, 255, 234, 0.1)',
@@ -650,7 +717,7 @@ const Dashboard = () => {
 
                 {/* Monitoreo en Vivo - Solo Administradores */}
                 {userRole === 'admin' && (
-                  <Grid item xs={12}>
+                <Grid item xs={12}>
                     <Paper sx={{
                       p: 3,
                       background: 'linear-gradient(145deg, rgba(0, 212, 255, 0.08) 0%, rgba(0, 212, 255, 0.03) 100%)',
@@ -712,8 +779,8 @@ const Dashboard = () => {
                       >
                         Abrir Monitoreo
                       </Button>
-                    </Paper>
-                  </Grid>
+                  </Paper>
+                </Grid>
                 )}
 
                 {/* Gestión de Conductores */}
@@ -744,7 +811,7 @@ const Dashboard = () => {
                     <Button 
                       variant="outlined" 
                       fullWidth
-                    sx={{
+                      sx={{ 
                         borderColor: '#7b2ff7',
                         color: '#7b2ff7',
                         '&:hover': {
