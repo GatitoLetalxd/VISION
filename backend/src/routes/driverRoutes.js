@@ -108,7 +108,8 @@ router.post('/', authenticateToken, authorize('admin'), [
       alert_threshold = 0.70,
       emergency_contact,
       emergency_phone,
-      notes
+      notes,
+      usuario_id  // ID del usuario a asociar con el conductor
     } = req.body;
 
     // Verificar si el número de licencia ya existe
@@ -124,16 +125,31 @@ router.post('/', authenticateToken, authorize('admin'), [
       });
     }
 
+    // Si se proporciona usuario_id, verificar que el usuario existe
+    if (usuario_id) {
+      const [users] = await executeQuery(
+        'SELECT id FROM users WHERE id = ? AND deleted_at IS NULL',
+        [usuario_id]
+      );
+      if (users.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'El usuario especificado no existe'
+        });
+      }
+    }
+
     const result = await executeQuery(`
       INSERT INTO drivers (
         license_number, first_name, last_name, phone, email,
         date_of_birth, license_expiry, alert_threshold,
-        emergency_contact, emergency_phone, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        emergency_contact, emergency_phone, notes, usuario_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       license_number, first_name, last_name, phone || null, email || null,
       date_of_birth, license_expiry, alert_threshold,
-      emergency_contact || null, emergency_phone || null, notes || null
+      emergency_contact || null, emergency_phone || null, notes || null,
+      usuario_id || null
     ]);
 
     res.status(201).json({

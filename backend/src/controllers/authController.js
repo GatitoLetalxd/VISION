@@ -29,10 +29,10 @@ const register = async (req, res) => {
       const firstName = nombre.trim();
       const lastName = apellido.trim();
       
-      // Insertar en la nueva estructura de tabla users
+      // Insertar en la nueva estructura de tabla users con rol 'driver' por defecto
       const [result] = await connection.execute(
         'INSERT INTO users (email, password, first_name, last_name, role, is_active) VALUES (?, ?, ?, ?, ?, ?)',
-        [correo, hashedPassword, firstName, lastName, 'viewer', 1]
+        [correo, hashedPassword, firstName, lastName, 'driver', 1]
       );
 
       console.log('Usuario insertado con ID:', result.insertId);
@@ -50,6 +50,38 @@ const register = async (req, res) => {
 
       const user = users[0];
       console.log('Datos del usuario recuperados:', user);
+
+      // Si el usuario es un driver, crear automáticamente un conductor asociado
+      if (user.role === 'driver') {
+        try {
+          // Generar un número de licencia temporal único basado en el ID del usuario
+          const licenseNumber = `TEMP-${user.id}-${Date.now()}`;
+          
+          // Crear conductor asociado al usuario
+          const [driverResult] = await connection.execute(
+            `INSERT INTO drivers (
+              license_number, first_name, last_name, 
+              date_of_birth, license_expiry, 
+              alert_threshold, usuario_id, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              licenseNumber,
+              user.first_name,
+              user.last_name,
+              '1990-01-01', // Fecha por defecto, el driver deberá actualizarla
+              new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 1 año desde hoy
+              0.70, // Umbral por defecto
+              user.id,
+              'Conductor creado automáticamente al registrarse. Por favor, actualice la información de la licencia.'
+            ]
+          );
+          
+          console.log('Conductor creado automáticamente con ID:', driverResult.insertId);
+        } catch (driverError) {
+          // Si falla la creación del conductor, no fallar el registro del usuario
+          console.error('Error al crear conductor automático (no crítico):', driverError);
+        }
+      }
 
       // Crear token para el nuevo usuario
       const token = jwt.sign(

@@ -23,15 +23,20 @@ class DrowsinessDetectionService {
   private modelsLoaded = false;
   private eyeClosedFrames = 0;
   private yawnFrames = 0;
-  // Umbrales más sensibles para mejor detección
-  private readonly EYE_AR_THRESH = 0.29; // Umbral para detectar ojos cerrados (aumentado para más sensibilidad)
-  private readonly YAWN_THRESH = 0.45;   // Umbral para detectar bostezo (aumentado para más sensibilidad)
-  private readonly EYE_AR_CONSEC_FRAMES = 1; // Solo 1 frame para confirmar (más rápido)
+  // Umbrales ajustados para mejor detección
+  private readonly EYE_AR_THRESH = 0.29; // Umbral para detectar ojos cerrados
+  private readonly EYE_AR_RELATIVE_THRESH = 0.20; // Umbral relativo: si EAR baja más del 20% del valor normal
+  private readonly YAWN_THRESH = 0.45;   // Umbral para detectar bostezo
+  private readonly EYE_AR_CONSEC_FRAMES = 2; // 2 frames para confirmar (reduce falsos positivos)
   private readonly YAWN_CONSEC_FRAMES = 1;   // Solo 1 frame para confirmar (detección más rápida de bostezos)
   private frameCount = 0;
   private debugMode = false; // Modo debug desactivado para mejor rendimiento
   private lastDetectionTime = 0;
   private readonly DETECTION_INTERVAL = 100; // Detectar cada 100ms (10 FPS) en lugar de cada frame
+  // Promedio móvil para EAR normal (para detección relativa)
+  private earHistory: number[] = [];
+  private readonly EAR_HISTORY_SIZE = 10; // Mantener últimos 10 valores
+  private baselineEAR: number | null = null; // EAR normal del usuario
 
   async loadModels(): Promise<void> {
     if (this.modelsLoaded) {
@@ -105,6 +110,7 @@ class DrowsinessDetectionService {
     );
   }
 
+
   /**
    * Detecta signos de somnolencia en un frame de video
    */
@@ -147,6 +153,19 @@ class DrowsinessDetectionService {
       const rightEAR = this.calculateEAR(rightEye);
       const avgEAR = (leftEAR + rightEAR) / 2.0;
 
+      // Actualizar historial de EAR para calcular baseline
+      this.earHistory.push(avgEAR);
+      if (this.earHistory.length > this.EAR_HISTORY_SIZE) {
+        this.earHistory.shift();
+      }
+      
+      // Calcular EAR baseline (promedio de los últimos valores cuando los ojos están abiertos)
+      if (this.earHistory.length >= 5) {
+        const sortedEAR = [...this.earHistory].sort((a, b) => b - a);
+        // Usar el promedio de los valores más altos (ojos abiertos)
+        this.baselineEAR = sortedEAR.slice(0, Math.floor(this.earHistory.length * 0.6)).reduce((a, b) => a + b, 0) / Math.floor(this.earHistory.length * 0.6);
+      }
+
       // Calcular MAR (Mouth Aspect Ratio)
       const mar = this.calculateMAR(mouth);
 
@@ -155,8 +174,10 @@ class DrowsinessDetectionService {
       if (this.debugMode && this.frameCount % 30 === 0) {
         console.log('📊 DEBUG Detección:', {
           EAR: avgEAR.toFixed(3),
-          'EAR Umbral': this.EYE_AR_THRESH,
-          'Ojos cerrados?': avgEAR < this.EYE_AR_THRESH,
+          'EAR Baseline': this.baselineEAR?.toFixed(3) || 'N/A',
+          'EAR Umbral Absoluto': this.EYE_AR_THRESH,
+          'EAR Umbral Relativo': this.baselineEAR ? (this.baselineEAR * (1 - this.EYE_AR_RELATIVE_THRESH)).toFixed(3) : 'N/A',
+          'Ojos cerrados?': avgEAR < this.EYE_AR_THRESH || (this.baselineEAR && avgEAR < this.baselineEAR * (1 - this.EYE_AR_RELATIVE_THRESH)),
           'Frames ojos cerrados': this.eyeClosedFrames,
           MAR: mar.toFixed(3),
           'MAR Umbral': this.YAWN_THRESH,
@@ -165,13 +186,16 @@ class DrowsinessDetectionService {
         });
       }
 
-      // Detectar ojos cerrados
+      // Detectar ojos cerrados usando umbral absoluto Y relativo
       let eyesClosed = false;
-      if (avgEAR < this.EYE_AR_THRESH) {
+      const absoluteThreshold = avgEAR < this.EYE_AR_THRESH;
+      const relativeThreshold = this.baselineEAR !== null && avgEAR < (this.baselineEAR * (1 - this.EYE_AR_RELATIVE_THRESH));
+      
+      if (absoluteThreshold || relativeThreshold) {
         this.eyeClosedFrames += 1;
         if (this.eyeClosedFrames >= this.EYE_AR_CONSEC_FRAMES) {
           eyesClosed = true;
-          console.log('😴 OJOS CERRADOS DETECTADOS! EAR:', avgEAR.toFixed(3), 'Frames:', this.eyeClosedFrames);
+          console.log('😴 OJOS CERRADOS DETECTADOS! EAR:', avgEAR.toFixed(3), 'Baseline:', this.baselineEAR?.toFixed(3) || 'N/A', 'Frames:', this.eyeClosedFrames);
         }
       } else {
         this.eyeClosedFrames = 0;
@@ -242,13 +266,26 @@ class DrowsinessDetectionService {
           ctx.font = 'bold 14px Arial';
           ctx.fillText(`👤 ${drowsinessLevel.toUpperCase()}`, box.x + 5, box.y - 10);
           
-          // Dibujar landmarks de ojos y boca
-          const drawOptions = new faceapi.draw.DrawFaceLandmarksOptions({ 
-            lineWidth: 2, 
-            drawLines: true,
-            color: eyesClosed ? '#ff5252' : '#00d4ff'
-          });
-          faceapi.draw.drawFaceLandmarks(canvas, resizedDetections, drawOptions);
+          // Dibujar landmarks de ojos y boca con mejor visibilidad
+          const landmarkColor = eyesClosed ? '#ff1744' : '#00d4ff';
+          
+          // Configurar color y grosor de línea antes de dibujar
+          ctx.strokeStyle = landmarkColor;
+          ctx.fillStyle = landmarkColor;
+          ctx.lineWidth = eyesClosed ? 4 : 3;
+          
+          // Dibujar landmarks
+          faceapi.draw.drawFaceLandmarks(canvas, resizedDetections);
+          
+          // Mostrar EAR promedio debajo del rostro
+          ctx.fillStyle = eyesClosed ? '#ff1744' : '#00d4ff';
+          ctx.font = 'bold 16px Arial';
+          ctx.fillText(`EAR: ${avgEAR.toFixed(3)}`, box.x, box.y + box.height + 25);
+          
+          // Mostrar umbral como referencia
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+          ctx.font = '12px Arial';
+          ctx.fillText(`Umbral: ${this.EYE_AR_THRESH}`, box.x, box.y + box.height + 45);
         }
       }
 
@@ -278,6 +315,8 @@ class DrowsinessDetectionService {
   reset(): void {
     this.eyeClosedFrames = 0;
     this.yawnFrames = 0;
+    this.earHistory = [];
+    this.baselineEAR = null;
   }
 
   /**

@@ -32,39 +32,39 @@ El sistema VISION utiliza **face-api.js**, una biblioteca JavaScript construida 
 │  Video Frame (640x480)                                      │
 │        │                                                    │
 │        ↓                                                    │
-│  ┌──────────────────────────────────────────────────┐     │
-│  │  MODELO 1: TinyFaceDetector                      │     │
-│  │  • Tipo: CNN (Convolutional Neural Network)      │     │
-│  │  • Propósito: Detectar rostros en la imagen      │     │
-│  │  • Output: Bounding box [x, y, width, height]    │     │
-│  └──────────────────────┬───────────────────────────┘     │
-│                         │                                  │
-│                         ↓                                  │
-│  ┌──────────────────────────────────────────────────┐     │
-│  │  MODELO 2: FaceLandmark68Net                     │     │
-│  │  • Tipo: CNN para regresión de puntos            │     │
-│  │  • Propósito: Detectar 68 puntos faciales        │     │
-│  │  • Output: 68 coordenadas (x, y)                 │     │
-│  └──────────────────────┬───────────────────────────┘     │
-│                         │                                  │
-│                         ↓                                  │
-│  ┌──────────────────────────────────────────────────┐     │
-│  │  MODELO 3: FaceRecognitionNet (Opcional)         │     │
-│  │  • Tipo: CNN + Face Embeddings                   │     │
-│  │  • Propósito: Generar descriptor facial (128D)   │     │
-│  │  • Output: Vector de características             │     │
-│  └──────────────────────┬───────────────────────────┘     │
-│                         │                                  │
-│                         ↓                                  │
-│  ┌──────────────────────────────────────────────────┐     │
-│  │  ALGORITMOS CUSTOM                               │     │
-│  │  • EAR (Eye Aspect Ratio)                        │     │
-│  │  • MAR (Mouth Aspect Ratio)                      │     │
-│  │  • Lógica de Somnolencia                         │     │
-│  └──────────────────────┬───────────────────────────┘     │
-│                         │                                  │
-│                         ↓                                  │
-│  Resultado: { eyesClosed, yawning, drowsinessLevel }      │
+│  ┌──────────────────────────────────────────────────┐       │
+│  │  MODELO 1: TinyFaceDetector                      │       │
+│  │  • Tipo: CNN (Convolutional Neural Network)      │       │
+│  │  • Propósito: Detectar rostros en la imagen      │       │
+│  │  • Output: Bounding box [x, y, width, height]    │       │
+│  └──────────────────────┬───────────────────────────┘       │
+│                         │                                   │
+│                         ↓                                   │
+│  ┌──────────────────────────────────────────────────┐       │
+│  │  MODELO 2: FaceLandmark68Net                     │       │
+│  │  • Tipo: CNN para regresión de puntos            │       │
+│  │  • Propósito: Detectar 68 puntos faciales        │       │
+│  │  • Output: 68 coordenadas (x, y)                 │       │
+│  └──────────────────────┬───────────────────────────┘       │
+│                         │                                   │
+│                         ↓                                   │
+│  ┌──────────────────────────────────────────────────┐       │
+│  │  MODELO 3: FaceRecognitionNet (Opcional)         │       │
+│  │  • Tipo: CNN + Face Embeddings                   │       │
+│  │  • Propósito: Generar descriptor facial (128D)   │       │
+│  │  • Output: Vector de características             │       │
+│  └──────────────────────┬───────────────────────────┘       │
+│                         │                                   │
+│                         ↓                                   │
+│  ┌──────────────────────────────────────────────────┐       │
+│  │  ALGORITMOS CUSTOM                               │       │
+│  │  • EAR (Eye Aspect Ratio)                        │       │
+│  │  • MAR (Mouth Aspect Ratio)                      │       │
+│  │  • Lógica de Somnolencia                         │       │
+│  └──────────────────────┬───────────────────────────┘       │
+│                         │                                   │
+│                         ↓                                   │
+│  Resultado: { eyesClosed, yawning, drowsinessLevel }        │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -91,19 +91,19 @@ El sistema VISION utiliza **face-api.js**, una biblioteca JavaScript construida 
 │  Versión usada:     0.22.2                                 │
 │                                                            │
 │  Capacidades:                                              │
-│  ✓ Detección de rostros                                   │
-│  ✓ Detección de puntos faciales (68 landmarks)            │
-│  ✓ Reconocimiento facial                                  │
-│  ✓ Detección de expresiones                               │
-│  ✓ Estimación de edad y género                            │
-│  ✓ Funciona 100% en el navegador (sin servidor)           │
+│  - Detección de rostros                                    │
+│  - Detección de puntos faciales (68 landmarks)             │
+│  - Reconocimiento facial                                   │
+│  - Detección de expresiones                                │
+│  - Estimación de edad y género                             │
+│  - Funciona 100% en el navegador (sin servidor)            │
 │                                                            │
 │  Modelos Disponibles:                                      │
 │  • SSD MobileNet V1                                        │
-│  • Tiny Face Detector (usado en VISION) ✓                 │
+│  • Tiny Face Detector (usado en VISION)                    │
 │  • MTCNN                                                   │
-│  • Face Landmark 68 (usado en VISION) ✓                   │
-│  • Face Recognition Net (usado en VISION) ✓               │
+│  • Face Landmark 68 (usado en VISION)                      │
+│  • Face Recognition Net (usado en VISION)                  │
 │  • Face Expression Net                                     │
 │  • Age Gender Net                                          │
 │                                                            │
@@ -114,18 +114,18 @@ El sistema VISION utiliza **face-api.js**, una biblioteca JavaScript construida 
 
 ```
 VENTAJAS:
-✓ Procesamiento local (privacidad del usuario)
-✓ No requiere servidor de IA
-✓ Latencia ultra-baja (< 100ms por frame)
-✓ Múltiples modelos pre-entrenados
-✓ Optimizado para navegadores modernos
-✓ Soporte para WebGL (aceleración GPU)
-✓ Fácil integración con React/TypeScript
+ Procesamiento local (privacidad del usuario)
+ No requiere servidor de IA
+ Latencia ultra-baja (< 100ms por frame)
+ Múltiples modelos pre-entrenados
+ Optimizado para navegadores modernos
+ Soporte para WebGL (aceleración GPU)
+ Fácil integración con React/TypeScript
 
 DESVENTAJAS:
-✗ Menor precisión que modelos en servidor
-✗ Consume recursos del cliente
-✗ Limitado por hardware del usuario
+ Menor precisión que modelos en servidor
+ Consume recursos del cliente
+ Limitado por hardware del usuario
 ```
 
 ---
@@ -168,7 +168,7 @@ DESVENTAJAS:
 │  Fully Connected Layers                                     │
 │      ↓                                                      │
 │  Output:                                                    │
-│      ├─ Bounding Box: [x, y, width, height]                │
+│      ├─ Bounding Box: [x, y, width, height]                 │
 │      └─ Confidence Score: [0.0 - 1.0]                       │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
@@ -194,17 +194,17 @@ const detections = await faceapi
 │                  INPUT SIZE                                  │
 ├──────────────────────────────────────────────────────────────┤
 │                                                              │
-│  128px  → Más rápido, menor precisión                       │
-│  160px  → Balance velocidad/precisión                       │
-│  224px  → USADO EN VISION - Óptimo ✓                        │
-│  320px  → Más preciso, más lento                            │
-│  416px  → Alta precisión, lento                             │
-│  512px  → Máxima precisión, muy lento                       │
-│  608px  → Extrema precisión, extremadamente lento           │
+│  128px  → Más rápido, menor precisión                        │
+│  160px  → Balance velocidad/precisión                        │
+│  224px  → USADO EN VISION - Óptimo------                     │
+│  320px  → Más preciso, más lento                             │
+│  416px  → Alta precisión, lento                              │
+│  512px  → Máxima precisión, muy lento                        │
+│  608px  → Extrema precisión, extremadamente lento            │
 │                                                              │
-│  Decisión: 224px                                            │
-│  Razón: Balance perfecto entre velocidad (10 FPS) y         │
-│         precisión para detección de somnolencia             │
+│  Decisión: 224px                                             │
+│  Razón: Balance perfecto entre velocidad (10 FPS) y          │
+│         precisión para detección de somnolencia              │
 │                                                              │
 └──────────────────────────────────────────────────────────────┘
 
@@ -212,15 +212,15 @@ const detections = await faceapi
 │                  SCORE THRESHOLD                             │
 ├──────────────────────────────────────────────────────────────┤
 │                                                              │
-│  0.3   → Detecta más rostros, más falsos positivos          │
-│  0.4   → Más permisivo                                      │
-│  0.5   → USADO EN VISION - Balance ✓                        │
-│  0.6   → Más estricto                                       │
-│  0.7+  → Solo rostros muy claros                            │
+│  0.3   → Detecta más rostros, más falsos positivos           │
+│  0.4   → Más permisivo                                       │
+│  0.5   → USADO EN VISION - Balance                           │
+│  0.6   → Más estricto                                        │
+│  0.7+  → Solo rostros muy claros                             │
 │                                                              │
-│  Decisión: 0.5                                              │
-│  Razón: Evita falsos positivos pero sigue siendo sensible   │
-│         a rostros en diferentes ángulos y condiciones       │
+│  Decisión: 0.5                                               │
+│  Razón: Evita falsos positivos pero sigue siendo sensible    │
+│         a rostros en diferentes ángulos y condiciones        │
 │                                                              │
 └──────────────────────────────────────────────────────────────┘
 ```

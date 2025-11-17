@@ -21,6 +21,9 @@ const driverRoutes = require('./routes/driverRoutes');
 const vehicleRoutes = require('./routes/vehicleRoutes');
 const eventRoutes = require('./routes/eventRoutes');
 const alertRoutes = require('./routes/alertRoutes');
+const detectionModelRoutes = require('./routes/detectionModelRoutes');
+const monitoringRoutes = require('./routes/monitoringRoutes');
+const videoProcessingRoutes = require('./routes/videoProcessingRoutes');
 
 const { testConnection } = require('./config/database');
 
@@ -55,6 +58,9 @@ const io = new Server(server, {
     methods: ["GET", "POST"]
   }
 });
+
+// Hacer que io esté disponible para las rutas
+app.set('io', io);
 
 // Middleware de seguridad con configuración ajustada para permitir recursos cross-origin
 app.use(helmet({
@@ -115,6 +121,9 @@ app.use('/api/drivers', driverRoutes);
 app.use('/api/vehicles', vehicleRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/alerts', alertRoutes);
+app.use('/api/detection', detectionModelRoutes);
+app.use('/api/monitoring', monitoringRoutes);
+app.use('/api/video', videoProcessingRoutes);
 
 // Ruta de prueba
 app.get('/api/test', (req, res) => {

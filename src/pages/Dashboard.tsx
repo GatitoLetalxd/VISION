@@ -33,12 +33,27 @@ import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import api from '../config/api';
 
 import BackgroundShapes from '../components/BackgroundShapes';
+import socketService from '../services/socket.service';
 
 interface DashboardStats {
   activeCameras: number;
   totalDrivers: number;
   activeAlerts: number;
   eventsToday: number;
+}
+
+interface OnlineDriver {
+  id: number;
+  nombre: string;
+  licencia: string;
+  isOnline: boolean;
+  lastUpdate: number;
+  metrics?: {
+    drowsinessLevel: string;
+    eyesClosed: boolean;
+    yawning: boolean;
+    confidence: number;
+  };
 }
 
 const Dashboard = () => {
@@ -52,6 +67,7 @@ const Dashboard = () => {
     activeAlerts: 0,
     eventsToday: 0,
   });
+  const [onlineDrivers, setOnlineDrivers] = useState<OnlineDriver[]>([]);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -104,12 +120,12 @@ const Dashboard = () => {
         const alertsRes = await api.get('/alerts?estado=pending');
         const alerts = alertsRes.data?.data || [];
 
-        setStats({
-          activeCameras: 3, // Por ahora simulado
+        setStats((prevStats) => ({
+          ...prevStats,
           totalDrivers: drivers.length,
           activeAlerts: alerts.length,
           eventsToday: events.length,
-        });
+        }));
       } catch (error) {
         console.error('Error al obtener estadísticas:', error);
       }
@@ -122,6 +138,83 @@ const Dashboard = () => {
     const interval = setInterval(fetchStats, 30000);
     return () => clearInterval(interval);
   }, [navigate]);
+
+  // Socket.IO para conductores en línea
+  useEffect(() => {
+    socketService.connect();
+    socketService.joinAlerts();
+
+    // Escuchar métricas de detección
+    const handleDetectionMetrics = (data: any) => {
+      const driverId = data.driverId || data.driver_id || data.userId;
+      
+      setOnlineDrivers((prevDrivers) => {
+        const existingIndex = prevDrivers.findIndex(d => d.id === driverId);
+        const now = Date.now();
+        
+        let updatedDrivers;
+        
+        if (existingIndex >= 0) {
+          // Actualizar conductor existente
+          updatedDrivers = [...prevDrivers];
+          updatedDrivers[existingIndex] = {
+            ...updatedDrivers[existingIndex],
+            isOnline: true,
+            lastUpdate: now,
+            metrics: data.metrics || data,
+          };
+        } else {
+          // Agregar nuevo conductor online
+          updatedDrivers = [...prevDrivers, {
+            id: driverId,
+            nombre: data.nombre || `Conductor ${driverId}`,
+            licencia: data.licencia || 'N/A',
+            isOnline: true,
+            lastUpdate: now,
+            metrics: data.metrics || data,
+          }];
+        }
+        
+        // Actualizar contador de cámaras activas
+        setStats((prevStats) => ({
+          ...prevStats,
+          activeCameras: updatedDrivers.length,
+        }));
+        
+        return updatedDrivers;
+      });
+    };
+
+    socketService.on('detection_metrics', handleDetectionMetrics);
+
+    // Verificar periódicamente conductores offline
+    const checkInterval = setInterval(() => {
+      setOnlineDrivers((prevDrivers) => {
+        const now = Date.now();
+        const OFFLINE_THRESHOLD = 10000; // 10 segundos
+        
+        const updatedDrivers = prevDrivers
+          .map(driver => ({
+            ...driver,
+            isOnline: now - driver.lastUpdate < OFFLINE_THRESHOLD,
+          }))
+          .filter(driver => driver.isOnline); // Remover conductores offline
+        
+        // Actualizar contador de cámaras activas
+        setStats((prevStats) => ({
+          ...prevStats,
+          activeCameras: updatedDrivers.length,
+        }));
+        
+        return updatedDrivers;
+      });
+    }, 5000);
+
+    return () => {
+      socketService.off('detection_metrics', handleDetectionMetrics);
+      clearInterval(checkInterval);
+    };
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -232,7 +325,7 @@ const Dashboard = () => {
               <VisibilityIcon sx={{ mr: 1, color: '#ff5252', filter: 'drop-shadow(0 0 5px rgba(255, 82, 82, 0.5))' }} />
               Detección en Vivo
             </MenuItem>
-            <MenuItem onClick={() => navigate('/my-images')}>
+            <MenuItem onClick={() => navigate('/video-processing')}>
               <PlayCircleOutlineIcon sx={{ mr: 1, color: '#00ffea', filter: 'drop-shadow(0 0 5px rgba(0, 255, 234, 0.5))' }} />
               Procesamiento de Video
             </MenuItem>
@@ -241,10 +334,16 @@ const Dashboard = () => {
               Gestión de Conductores
             </MenuItem>
             {userRole === 'admin' && (
-              <MenuItem onClick={() => navigate('/users')}>
-                <AdminPanelSettingsIcon sx={{ mr: 1, color: '#ffa726', filter: 'drop-shadow(0 0 5px rgba(255, 167, 38, 0.5))' }} />
-                Gestión de Usuarios
-              </MenuItem>
+              <>
+                <MenuItem onClick={() => navigate('/monitoring')}>
+                  <VisibilityIcon sx={{ mr: 1, color: '#00d4ff', filter: 'drop-shadow(0 0 5px rgba(0, 212, 255, 0.5))' }} />
+                  Monitoreo en Vivo
+                </MenuItem>
+                <MenuItem onClick={() => navigate('/users')}>
+                  <AdminPanelSettingsIcon sx={{ mr: 1, color: '#ffa726', filter: 'drop-shadow(0 0 5px rgba(255, 167, 38, 0.5))' }} />
+                  Gestión de Usuarios
+                </MenuItem>
+              </>
             )}
             <MenuItem onClick={handleLogout}>
               <LogoutIcon sx={{ mr: 1, color: '#ff006e', filter: 'drop-shadow(0 0 5px rgba(255, 0, 110, 0.5))' }} />
@@ -452,102 +551,6 @@ const Dashboard = () => {
             </Grid>
           </Grid>
 
-          {/* Gestión de Cámaras */}
-          <Paper sx={{
-            p: 3,
-            mb: 3,
-            background: 'linear-gradient(145deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%)',
-            backdropFilter: 'blur(20px)',
-            border: '1px solid rgba(0, 212, 255, 0.2)',
-            borderRadius: 4,
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
-          }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <VideocamIcon sx={{ 
-                  color: '#00d4ff', 
-                  filter: 'drop-shadow(0 0 8px rgba(0, 212, 255, 0.6))', 
-                  mr: 2, 
-                  fontSize: 32 
-                }} />
-                <Typography variant="h5" sx={{ color: 'white', fontWeight: 600 }}>
-                  Cámaras de Monitoreo
-                </Typography>
-              </Box>
-              <Chip 
-                label={`${stats.activeCameras} En Línea`}
-                sx={{ 
-                  background: 'rgba(76, 175, 80, 0.2)', 
-                  color: '#4caf50',
-                  border: '1px solid #4caf50',
-                  fontWeight: 600,
-                }} 
-              />
-            </Box>
-            <Grid container spacing={2}>
-              {[
-                { id: 1, name: 'Cámara Principal - Cabina', status: 'online', location: 'Interior Vehículo 01', fps: 30 },
-                { id: 2, name: 'Cámara Frontal - Carretera', status: 'online', location: 'Exterior Vehículo 01', fps: 30 },
-                { id: 3, name: 'Cámara Trasera - Punto Ciego', status: 'online', location: 'Exterior Vehículo 01', fps: 25 },
-              ].map((camera) => (
-                <Grid item xs={12} md={4} key={camera.id}>
-                  <Card sx={{
-                    background: 'linear-gradient(145deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%)',
-                    backdropFilter: 'blur(10px)',
-                    border: '1px solid rgba(0, 212, 255, 0.3)',
-                    borderRadius: 2,
-                    transition: 'all 0.3s ease',
-                    '&:hover': {
-                      transform: 'translateY(-4px)',
-                      boxShadow: '0 8px 24px rgba(0, 212, 255, 0.3)',
-                    },
-                  }}>
-                    <CardContent>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-                        <Typography variant="subtitle1" sx={{ color: 'white', fontWeight: 600 }}>
-                          {camera.name}
-                        </Typography>
-                        <Chip 
-                          label="En Vivo"
-                          size="small"
-                          sx={{ 
-                            background: 'rgba(76, 175, 80, 0.2)', 
-                            color: '#4caf50',
-                            border: '1px solid #4caf50',
-                            fontSize: '0.7rem',
-                          }} 
-                        />
-                      </Box>
-                      <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.6)', mb: 1 }}>
-                        📍 {camera.location}
-                      </Typography>
-                      <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.6)', mb: 2 }}>
-                        🎥 {camera.fps} FPS
-                      </Typography>
-                      <Box sx={{ display: 'flex', gap: 1 }}>
-                        <Button 
-                          size="small" 
-                          variant="outlined"
-                          fullWidth
-                          sx={{
-                            borderColor: '#00d4ff',
-                            color: '#00d4ff',
-                            '&:hover': {
-                              borderColor: '#00d4ff',
-                              background: 'rgba(0, 212, 255, 0.1)',
-                            },
-                          }}
-                        >
-                          Ver Stream
-                        </Button>
-                      </Box>
-                    </CardContent>
-                  </Card>
-                </Grid>
-              ))}
-            </Grid>
-          </Paper>
-
           {/* Sección Principal */}
           <Grid container spacing={3}>
             {/* Panel de Detección en Vivo */}
@@ -618,7 +621,7 @@ const Dashboard = () => {
                       transform: 'translateY(-4px)',
                       boxShadow: '0 12px 40px rgba(0, 255, 234, 0.3)',
                       },
-                  }} onClick={() => navigate('/my-images')}>
+                  }} onClick={() => navigate('/video-processing')}>
                     <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                       <PlayCircleOutlineIcon sx={{ color: '#00ffea', filter: 'drop-shadow(0 0 8px rgba(0, 255, 234, 0.6))', mr: 1, fontSize: 32 }} />
                       <Typography variant="h6" sx={{ color: 'white' }}>
@@ -626,7 +629,7 @@ const Dashboard = () => {
                       </Typography>
                     </Box>
                     <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)', mb: 2 }}>
-                      Procesa videos grabados y analiza patrones de somnolencia
+                      Analiza videos grabados con IA - Análisis Detallado (Nivel 2)
                     </Typography>
                     <Button 
                       variant="outlined" 
@@ -644,6 +647,74 @@ const Dashboard = () => {
                     </Button>
                   </Paper>
                 </Grid>
+
+                {/* Monitoreo en Vivo - Solo Administradores */}
+                {userRole === 'admin' && (
+                  <Grid item xs={12}>
+                    <Paper sx={{
+                      p: 3,
+                      background: 'linear-gradient(145deg, rgba(0, 212, 255, 0.08) 0%, rgba(0, 212, 255, 0.03) 100%)',
+                      backdropFilter: 'blur(20px)',
+                      border: '2px solid rgba(0, 212, 255, 0.3)',
+                      borderRadius: 4,
+                      cursor: 'pointer',
+                      transition: 'all 0.3s ease',
+                      position: 'relative',
+                      overflow: 'hidden',
+                      '&:hover': {
+                        background: 'linear-gradient(145deg, rgba(0, 212, 255, 0.15) 0%, rgba(0, 212, 255, 0.08) 100%)',
+                        transform: 'translateY(-4px)',
+                        boxShadow: '0 12px 40px rgba(0, 212, 255, 0.4)',
+                      },
+                      '&::before': {
+                        content: '""',
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: '4px',
+                        background: 'linear-gradient(90deg, #00d4ff, #00ffea)',
+                      },
+                    }} onClick={() => navigate('/monitoring')}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                          <VisibilityIcon sx={{ color: '#00d4ff', filter: 'drop-shadow(0 0 8px rgba(0, 212, 255, 0.8))', mr: 1, fontSize: 32 }} />
+                          <Typography variant="h6" sx={{ color: 'white', fontWeight: 700 }}>
+                            Monitoreo en Tiempo Real
+                          </Typography>
+                        </Box>
+                        <Chip 
+                          label="ADMIN" 
+                          size="small"
+                          sx={{ 
+                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                            color: 'white',
+                            fontWeight: 700,
+                          }}
+                        />
+                      </Box>
+                      <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.8)', mb: 2 }}>
+                        Visualiza en tiempo real las métricas de somnolencia de todos los conductores activos
+                      </Typography>
+                      <Button 
+                        variant="outlined" 
+                        fullWidth
+                        startIcon={<VideocamIcon />}
+                        sx={{
+                          borderColor: '#00d4ff',
+                          color: '#00d4ff',
+                          fontWeight: 600,
+                          '&:hover': {
+                            borderColor: '#00d4ff',
+                            background: 'rgba(0, 212, 255, 0.15)',
+                          },
+                        }}
+                      >
+                        Abrir Monitoreo
+                      </Button>
+                    </Paper>
+                  </Grid>
+                )}
 
                 {/* Gestión de Conductores */}
                 <Grid item xs={12}>
@@ -689,6 +760,210 @@ const Dashboard = () => {
               </Grid>
             </Grid>
           </Grid>
+
+          {/* Conductores en Línea */}
+          <Paper sx={{
+            p: 3,
+            mt: 3,
+            background: 'linear-gradient(145deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%)',
+            backdropFilter: 'blur(20px)',
+            border: '1px solid rgba(0, 212, 255, 0.2)',
+            borderRadius: 4,
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+          }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <DirectionsCarIcon sx={{ 
+                  color: '#00d4ff', 
+                  filter: 'drop-shadow(0 0 8px rgba(0, 212, 255, 0.6))', 
+                  mr: 2, 
+                  fontSize: 32 
+                }} />
+                <Typography variant="h5" sx={{ color: 'white', fontWeight: 600 }}>
+                  Conductores en Línea
+                </Typography>
+              </Box>
+              <Chip 
+                label={`${onlineDrivers.length} Activos`}
+                icon={<VisibilityIcon />}
+                sx={{ 
+                  background: onlineDrivers.length > 0 
+                    ? 'rgba(76, 175, 80, 0.2)' 
+                    : 'rgba(158, 158, 158, 0.2)', 
+                  color: onlineDrivers.length > 0 ? '#4caf50' : '#9e9e9e',
+                  border: `1px solid ${onlineDrivers.length > 0 ? '#4caf50' : '#9e9e9e'}`,
+                  fontWeight: 600,
+                }} 
+              />
+            </Box>
+            <Grid container spacing={2}>
+              {onlineDrivers.length === 0 ? (
+                <Grid item xs={12}>
+                  <Box sx={{ 
+                    textAlign: 'center', 
+                    py: 6,
+                    px: 2,
+                    background: 'rgba(255, 255, 255, 0.02)',
+                    borderRadius: 2,
+                    border: '1px dashed rgba(255, 255, 255, 0.1)',
+                  }}>
+                    <DirectionsCarIcon sx={{ 
+                      fontSize: 64, 
+                      color: 'rgba(255, 255, 255, 0.2)', 
+                      mb: 2 
+                    }} />
+                    <Typography variant="h6" sx={{ color: 'rgba(255, 255, 255, 0.5)', mb: 1 }}>
+                      No hay conductores en línea
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.3)' }}>
+                      Los conductores aparecerán aquí cuando inicien la detección de somnolencia
+                    </Typography>
+                  </Box>
+                </Grid>
+              ) : (
+                onlineDrivers.slice(0, 3).map((driver) => {
+                  const getDrowsinessColor = (level?: string) => {
+                    switch (level) {
+                      case 'critical': return '#ff1744';
+                      case 'high': return '#ff5252';
+                      case 'medium': return '#ffa726';
+                      case 'low': return '#ffeb3b';
+                      default: return '#4caf50';
+                    }
+                  };
+
+                  const getDrowsinessLabel = (level?: string) => {
+                    switch (level) {
+                      case 'critical': return 'CRÍTICO';
+                      case 'high': return 'ALTO';
+                      case 'medium': return 'MEDIO';
+                      case 'low': return 'BAJO';
+                      default: return 'NORMAL';
+                    }
+                  };
+
+                  return (
+                    <Grid item xs={12} md={4} key={driver.id}>
+                      <Card 
+                        component={motion.div}
+                        whileHover={{ scale: 1.02 }}
+                        sx={{
+                          background: 'linear-gradient(145deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%)',
+                          backdropFilter: 'blur(10px)',
+                          border: `2px solid ${driver.metrics ? getDrowsinessColor(driver.metrics.drowsinessLevel) : 'rgba(0, 212, 255, 0.3)'}`,
+                          borderRadius: 2,
+                          transition: 'all 0.3s ease',
+                          cursor: 'pointer',
+                          '&:hover': {
+                            transform: 'translateY(-4px)',
+                            boxShadow: `0 8px 24px ${driver.metrics ? getDrowsinessColor(driver.metrics.drowsinessLevel) + '40' : 'rgba(0, 212, 255, 0.3)'}`,
+                          },
+                        }}
+                        onClick={() => userRole === 'admin' && navigate('/monitoring')}
+                      >
+                        <CardContent>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+                            <Box>
+                              <Typography variant="subtitle1" sx={{ color: 'white', fontWeight: 700 }}>
+                                {driver.nombre}
+                              </Typography>
+                              <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.6)' }}>
+                                Lic: {driver.licencia}
+                              </Typography>
+                            </Box>
+                            <Chip 
+                              label="EN VIVO"
+                              size="small"
+                              icon={<VideocamIcon />}
+                              sx={{ 
+                                background: 'rgba(76, 175, 80, 0.2)', 
+                                color: '#4caf50',
+                                border: '1px solid #4caf50',
+                                fontSize: '0.7rem',
+                                fontWeight: 700,
+                                animation: 'pulse 2s infinite',
+                              }} 
+                            />
+                          </Box>
+
+                          {driver.metrics && (
+                            <>
+                              <Box sx={{ mb: 2 }}>
+                                <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.6)' }}>
+                                  Nivel de Somnolencia
+                                </Typography>
+                                <Chip 
+                                  label={getDrowsinessLabel(driver.metrics.drowsinessLevel)}
+                                  size="small"
+                                  sx={{
+                                    mt: 0.5,
+                                    bgcolor: getDrowsinessColor(driver.metrics.drowsinessLevel),
+                                    color: 'white',
+                                    fontWeight: 700,
+                                    width: '100%',
+                                  }}
+                                />
+                              </Box>
+
+                              <Box sx={{ 
+                                display: 'grid', 
+                                gridTemplateColumns: '1fr 1fr', 
+                                gap: 1,
+                                p: 1,
+                                bgcolor: 'rgba(0, 0, 0, 0.3)',
+                                borderRadius: 1,
+                                mb: 2,
+                              }}>
+                                <Box>
+                                  <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.6)' }}>
+                                    👁️ Ojos
+                                  </Typography>
+                                  <Typography variant="body2" sx={{ 
+                                    color: driver.metrics.eyesClosed ? '#ff5252' : '#4caf50',
+                                    fontWeight: 600,
+                                  }}>
+                                    {driver.metrics.eyesClosed ? 'Cerrados' : 'Abiertos'}
+                                  </Typography>
+                                </Box>
+                                <Box>
+                                  <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.6)' }}>
+                                    😊 Boca
+                                  </Typography>
+                                  <Typography variant="body2" sx={{ 
+                                    color: driver.metrics.yawning ? '#ffa726' : '#4caf50',
+                                    fontWeight: 600,
+                                  }}>
+                                    {driver.metrics.yawning ? 'Bostezo' : 'Normal'}
+                                  </Typography>
+                                </Box>
+                              </Box>
+
+                              <LinearProgress 
+                                variant="determinate" 
+                                value={driver.metrics.confidence * 100}
+                                sx={{
+                                  height: 6,
+                                  borderRadius: 3,
+                                  bgcolor: 'rgba(255, 255, 255, 0.1)',
+                                  '& .MuiLinearProgress-bar': {
+                                    bgcolor: '#00d4ff',
+                                    borderRadius: 3,
+                                  },
+                                }}
+                              />
+                              <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.6)', mt: 0.5 }}>
+                                Confianza: {(driver.metrics.confidence * 100).toFixed(0)}%
+                              </Typography>
+                            </>
+                          )}
+                        </CardContent>
+                      </Card>
+                    </Grid>
+                  );
+                })
+              )}
+            </Grid>
+          </Paper>
         </motion.div>
       </Container>
     </Box>

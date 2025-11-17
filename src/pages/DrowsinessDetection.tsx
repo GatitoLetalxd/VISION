@@ -37,6 +37,10 @@ import BackgroundShapes from '../components/BackgroundShapes';
 import { socketService } from '../services/socket.service';
 import { drowsinessDetectionService } from '../services/drowsinessDetection.service';
 import type { DrowsinessMetrics } from '../services/drowsinessDetection.service';
+import { useDetectionModel } from '../hooks/useDetectionModel';
+import { DetectionModelSelector } from '../components/DetectionModelSelector';
+import { monitoringService } from '../services/monitoring.service';
+import api from '../config/api';
 
 // Definir tipos localmente
 interface DrowsinessEvent {
@@ -70,6 +74,19 @@ const DrowsinessDetection = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
+  // Hook del sistema hibrido
+  const {
+    currentModel,
+    availableModels,
+    loading: modelsLoading,
+    sessionId,
+    changeModel,
+    startSession,
+    endSession,
+    isMediaPipe,
+    isFaceApi
+  } = useDetectionModel();
+
   const [isDetecting, setIsDetecting] = useState(false);
   const [cameraAvailable, setCameraAvailable] = useState(false);
   const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
@@ -87,6 +104,9 @@ const DrowsinessDetection = () => {
     eyesClosedCount: 0,
     lastEventTime: null,
   });
+  const [showModelSelector, setShowModelSelector] = useState(false);
+  const [userId, setUserId] = useState<number | null>(null);
+  const [videoAspectRatio, setVideoAspectRatio] = useState<number>(16 / 9); // Aspect ratio por defecto 16:9
 
   // Contadores de tiempo para eventos (en frames)
   const eyesClosedTimeRef = useRef<number>(0);
@@ -95,8 +115,22 @@ const DrowsinessDetection = () => {
   const eyesClosedRegisteredRef = useRef<boolean>(false);
   const yawnRegisteredRef = useRef<boolean>(false);
   const drowsinessRegisteredRef = useRef<boolean>(false);
+  const totalFramesRef = useRef<number>(0);
 
   useEffect(() => {
+    // Obtener información del usuario para el driverId
+    const fetchUserData = async () => {
+      try {
+        const response = await api.get('/user/profile');
+        if (response.data) {
+          setUserId(response.data.id || response.data.userId);
+        }
+      } catch (error) {
+        console.error('Error al obtener datos del usuario:', error);
+      }
+    };
+    fetchUserData();
+
     // Conectar Socket.IO al montar el componente
     socketService.connect();
     socketService.joinAlerts();
@@ -351,11 +385,25 @@ const DrowsinessDetection = () => {
     }
   };
 
-  const stopCamera = () => {
+  const stopCamera = async () => {
     // Detener el intervalo de detección
     if (detectionIntervalRef.current) {
       clearInterval(detectionIntervalRef.current);
       detectionIntervalRef.current = null;
+    }
+
+    // Finalizar sesión si existe
+    if (sessionId) {
+      try {
+        await endSession({
+          totalFrames: totalFramesRef.current,
+          totalEvents: stats.totalEvents,
+          avgConfidence: detectionMetrics?.confidence || 0,
+          notes: `Sesion finalizada. Modelo: ${currentModel}`
+        });
+      } catch (error) {
+        console.error('Error finalizando sesión:', error);
+      }
     }
 
     // Reiniciar el servicio de detección
@@ -368,6 +416,7 @@ const DrowsinessDetection = () => {
     eyesClosedRegisteredRef.current = false;
     yawnRegisteredRef.current = false;
     drowsinessRegisteredRef.current = false;
+    totalFramesRef.current = 0;
 
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
@@ -393,6 +442,16 @@ const DrowsinessDetection = () => {
 
   const startDetectionLoop = async () => {
     console.log('🎥 Iniciando detección de somnolencia con IA...');
+    console.log('📊 Modelo seleccionado:', currentModel);
+    
+    // Crear sesión de detección
+    try {
+      const driverId = userId || 1; // Usar userId si está disponible, sino usar 1 por defecto
+      await startSession(driverId);
+      console.log('✅ Sesión de detección creada:', sessionId);
+    } catch (error) {
+      console.error('Error creando sesión:', error);
+    }
     
     // Esperar a que el video esté listo
     if (!videoRef.current) {
@@ -414,9 +473,15 @@ const DrowsinessDetection = () => {
             if (canvasRef.current) {
               canvasRef.current.width = videoRef.current.videoWidth;
               canvasRef.current.height = videoRef.current.videoHeight;
+              
+              // Calcular y actualizar el aspect ratio del video
+              const aspectRatio = videoRef.current.videoWidth / videoRef.current.videoHeight;
+              setVideoAspectRatio(aspectRatio);
+              
               console.log('✅ Canvas configurado:', {
                 width: canvasRef.current.width,
-                height: canvasRef.current.height
+                height: canvasRef.current.height,
+                aspectRatio
               });
             }
             resolve();
@@ -463,6 +528,9 @@ const DrowsinessDetection = () => {
       }
 
       try {
+        // Incrementar contador de frames
+        totalFramesRef.current += 1;
+
         const metrics = await drowsinessDetectionService.detectDrowsiness(
           videoRef.current,
           canvasRef.current
@@ -470,6 +538,61 @@ const DrowsinessDetection = () => {
 
         if (metrics) {
           setDetectionMetrics(metrics);
+
+          // Enviar métricas al servidor para monitoreo en tiempo real
+          const driverId = userId || 1; // Usar userId si está disponible
+          monitoringService.sendMetrics(metrics, driverId);
+
+          // Capturar y enviar frame de video para monitoreo en tiempo real (sin recuadros de detección)
+          if (videoRef.current && videoRef.current.videoWidth > 0 && videoRef.current.videoHeight > 0) {
+            try {
+              const video = videoRef.current;
+              const videoWidth = video.videoWidth;
+              const videoHeight = video.videoHeight;
+              const isVertical = videoHeight > videoWidth;
+              
+              // Crear un canvas temporal solo para capturar el video sin recuadros
+              const tempCanvas = document.createElement('canvas');
+              const tempCtx = tempCanvas.getContext('2d');
+              
+              if (tempCtx) {
+                if (isVertical) {
+                  // Para videos verticales, mantener todo el ancho y recortar la altura (centro vertical)
+                  // Calcular la altura del recorte (usar el 38% de la altura original centrado)
+                  const cropHeight = videoHeight * 0.38;
+                  const cropY = (videoHeight - cropHeight) / 2; // Centrar verticalmente
+                  
+                  // El canvas mantendrá todo el ancho pero recortará la altura (sin bordes negros)
+                  tempCanvas.width = videoWidth;
+                  tempCanvas.height = cropHeight;
+                  
+                  // Limpiar el canvas antes de dibujar para evitar bordes negros
+                  tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+                  
+                  // Dibujar solo la parte central del video (recortando arriba y abajo)
+                  tempCtx.drawImage(
+                    video,
+                    0, cropY,              // Posición de origen en el video (sx, sy)
+                    videoWidth, cropHeight, // Tamaño de origen (sw, sh)
+                    0, 0,                   // Posición destino en canvas (dx, dy)
+                    videoWidth, cropHeight  // Tamaño destino (dw, dh)
+                  );
+                } else {
+                  // Para videos horizontales, mostrar todo el video
+                  tempCanvas.width = videoWidth;
+                  tempCanvas.height = videoHeight;
+                  tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
+                }
+                
+                const frameData = tempCanvas.toDataURL('image/jpeg', 0.7); // Comprimir a 70% calidad
+                const driverId = userId || 1; // Usar userId si está disponible
+                monitoringService.sendVideoFrame(frameData, driverId);
+              }
+            } catch (error) {
+              // Silenciar errores de captura de frame (puede fallar si el video no está listo)
+              console.debug('No se pudo capturar frame:', error);
+            }
+          }
 
           // Reproducir alerta sonora en caso crítico
           if (metrics.drowsinessLevel === 'critical' || metrics.drowsinessLevel === 'high') {
@@ -748,6 +871,30 @@ const DrowsinessDetection = () => {
                   <VideocamIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
                   Video en Vivo
                 </Typography>
+                <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                  <Chip
+                    label={`Modelo: ${currentModel === 'face-api' ? 'face-api.js' : 'MediaPipe'}`}
+                    color={isMediaPipe ? 'secondary' : 'primary'}
+                    size="small"
+                    sx={{ fontWeight: 600 }}
+                  />
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={() => setShowModelSelector(!showModelSelector)}
+                    disabled={isDetecting}
+                    sx={{
+                      borderColor: 'rgba(0, 212, 255, 0.3)',
+                      color: 'white',
+                      '&:hover': {
+                        borderColor: 'rgba(0, 212, 255, 0.6)',
+                        background: 'rgba(0, 212, 255, 0.1)',
+                      },
+                    }}
+                  >
+                    {showModelSelector ? 'Ocultar Config' : 'Cambiar Modelo'}
+                  </Button>
+                </Box>
                 <Box>
                   {!isDetecting ? (
                     <Button
@@ -907,12 +1054,48 @@ const DrowsinessDetection = () => {
                 sx={{
                   position: 'relative',
                   width: '100%',
-                  paddingTop: '56.25%', // 16:9 aspect ratio
+                  // Aspect ratio dinámico basado en las dimensiones reales del video
+                  // Para videos verticales en móviles, usar altura fija
+                  ...(videoAspectRatio < 1 ? {
+                    paddingTop: 0,
+                    height: {
+                      xs: '70vh',
+                      sm: `${(1 / videoAspectRatio) * 100}%`,
+                    },
+                  } : {
+                    paddingTop: `${(1 / videoAspectRatio) * 100}%`,
+                  }),
                   backgroundColor: 'black',
                   borderRadius: 2,
                   overflow: 'hidden',
-                  border: cameraAvailable ? '2px solid #00d4ff' : '2px solid rgba(255, 255, 255, 0.1)',
-                  boxShadow: cameraAvailable ? '0 0 20px rgba(0, 212, 255, 0.4)' : 'none',
+                  border: {
+                    xs: detectionMetrics?.drowsinessLevel === 'critical' ? '2px solid #ff1744' :
+                        detectionMetrics?.drowsinessLevel === 'high' ? '2px solid #ff1744' :
+                        detectionMetrics?.drowsinessLevel === 'medium' ? '2px solid #ff9800' :
+                        detectionMetrics?.drowsinessLevel === 'low' ? '1px solid #ffeb3b' :
+                        cameraAvailable ? '1px solid #00d4ff' : '1px solid rgba(255, 255, 255, 0.1)',
+                    sm: detectionMetrics?.drowsinessLevel === 'critical' ? '3px solid #ff1744' :
+                        detectionMetrics?.drowsinessLevel === 'high' ? '2px solid #ff1744' :
+                        detectionMetrics?.drowsinessLevel === 'medium' ? '2px solid #ff9800' :
+                        detectionMetrics?.drowsinessLevel === 'low' ? '2px solid #ffeb3b' :
+                        cameraAvailable ? '2px solid #00d4ff' : '2px solid rgba(255, 255, 255, 0.1)',
+                    md: detectionMetrics?.drowsinessLevel === 'critical' ? '4px solid #ff1744' :
+                        detectionMetrics?.drowsinessLevel === 'high' ? '3px solid #ff1744' :
+                        detectionMetrics?.drowsinessLevel === 'medium' ? '3px solid #ff9800' :
+                        detectionMetrics?.drowsinessLevel === 'low' ? '2px solid #ffeb3b' :
+                        cameraAvailable ? '2px solid #00d4ff' : '2px solid rgba(255, 255, 255, 0.1)',
+                  },
+                  boxShadow: detectionMetrics?.drowsinessLevel === 'critical' ? '0 0 40px rgba(255, 23, 68, 0.8)' :
+                             detectionMetrics?.drowsinessLevel === 'high' ? '0 0 30px rgba(255, 23, 68, 0.6)' :
+                             detectionMetrics?.drowsinessLevel === 'medium' ? '0 0 20px rgba(255, 152, 0, 0.6)' :
+                             detectionMetrics?.drowsinessLevel === 'low' ? '0 0 15px rgba(255, 235, 59, 0.5)' :
+                             cameraAvailable ? '0 0 20px rgba(0, 212, 255, 0.4)' : 'none',
+                  animation: detectionMetrics?.drowsinessLevel === 'critical' ? 'pulseBorderFast 0.5s ease-in-out infinite' :
+                             detectionMetrics?.drowsinessLevel === 'high' ? 'pulseBorder 1s ease-in-out infinite' :
+                             detectionMetrics?.drowsinessLevel === 'medium' ? 'pulseBorderOrange 1.5s ease-in-out infinite' :
+                             detectionMetrics?.drowsinessLevel === 'low' ? 'pulseBorderYellow 2s ease-in-out infinite' :
+                             'none',
+                  transition: 'all 0.3s ease',
                 }}
               >
                 <video
@@ -926,7 +1109,7 @@ const DrowsinessDetection = () => {
                     left: 0,
                     width: '100%',
                     height: '100%',
-                    objectFit: 'cover',
+                    objectFit: 'contain', // Cambiar a contain para evitar compresión
                   }}
                 />
                 <canvas
@@ -938,6 +1121,7 @@ const DrowsinessDetection = () => {
                     width: '100%',
                     height: '100%',
                     pointerEvents: 'none',
+                    objectFit: 'contain', // Mantener proporciones sin comprimir
                   }}
                 />
                 {!cameraAvailable && (
@@ -956,17 +1140,92 @@ const DrowsinessDetection = () => {
                   </Box>
                 )}
 
+                {/* Barra de alerta superior */}
+                {detectionMetrics && (detectionMetrics.drowsinessLevel === 'high' || detectionMetrics.drowsinessLevel === 'critical') && (
+                  <Box
+                    component={motion.div}
+                    initial={{ y: -100, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    exit={{ y: -100, opacity: 0 }}
+                    sx={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      zIndex: 20,
+                      background: detectionMetrics.drowsinessLevel === 'critical' 
+                        ? 'linear-gradient(180deg, rgba(255, 23, 68, 0.95) 0%, rgba(198, 40, 40, 0.90) 100%)'
+                        : 'linear-gradient(180deg, rgba(255, 82, 82, 0.90) 0%, rgba(229, 57, 53, 0.85) 100%)',
+                      padding: {
+                        xs: '6px 10px',
+                        sm: '8px 12px',
+                        md: '10px 16px',
+                        lg: '12px 20px',
+                      },
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: { xs: 0.5, sm: 1, md: 1.5, lg: 2 },
+                      boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)',
+                      animation: detectionMetrics.drowsinessLevel === 'critical' ? 'shake 0.5s infinite' : 'none',
+                    }}
+                  >
+                    <WarningIcon 
+                      sx={{ 
+                        fontSize: { xs: 18, sm: 20, md: 24, lg: 28 },
+                        color: 'white',
+                        animation: 'pulse 0.8s infinite',
+                        filter: 'drop-shadow(0 0 8px rgba(255, 255, 255, 0.8))',
+                      }} 
+                    />
+                    <Typography
+                      sx={{
+                        color: 'white',
+                        fontSize: { xs: '0.65rem', sm: '0.75rem', md: '0.9rem', lg: '1.1rem' },
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        letterSpacing: { xs: '0.05em', sm: '0.08em', md: '0.1em' },
+                        textShadow: '0 2px 4px rgba(0, 0, 0, 0.5)',
+                      }}
+                    >
+                      {detectionMetrics.drowsinessLevel === 'critical' 
+                        ? '¡ALERTA CRITICA! DETENGA EL VEHICULO'
+                        : '¡ALERTA! SIGNOS DE SOMNOLENCIA DETECTADOS'}
+                    </Typography>
+                    <WarningIcon 
+                      sx={{ 
+                        fontSize: 28,
+                        color: 'white',
+                        animation: 'pulse 0.8s infinite',
+                        filter: 'drop-shadow(0 0 8px rgba(255, 255, 255, 0.8))',
+                      }} 
+                    />
+                  </Box>
+                )}
+
                 {/* Overlay de métricas en tiempo real */}
                 {detectionMetrics && (
                   <Box
                     sx={{
                       position: 'absolute',
-                      top: 10,
-                      left: 10,
-                      background: 'rgba(0, 0, 0, 0.8)',
-                      backdropFilter: 'blur(10px)',
-                      padding: '12px 16px',
-                      borderRadius: 2,
+                      top: '1%',
+                      left: '1%',
+                      width: 'auto',
+                      maxWidth: {
+                        xs: '50%',
+                        sm: '40%',
+                        md: '30%',
+                        lg: '25%',
+                      },
+                      background: 'rgba(0, 0, 0, 0.45)',
+                      backdropFilter: 'blur(6px)',
+                      padding: {
+                        xs: '4px 6px',
+                        sm: '6px 8px',
+                        md: '8px 10px',
+                        lg: '10px 12px',
+                      },
+                      borderRadius: { xs: 1, sm: 1.5, md: 2 },
                       border: `2px solid ${
                         detectionMetrics.drowsinessLevel === 'critical' ? '#ff1744' :
                         detectionMetrics.drowsinessLevel === 'high' ? '#ff5252' :
@@ -974,77 +1233,132 @@ const DrowsinessDetection = () => {
                         detectionMetrics.drowsinessLevel === 'low' ? '#ffeb3b' :
                         '#4caf50'
                       }`,
-                      boxShadow: `0 0 20px ${
-                        detectionMetrics.drowsinessLevel === 'critical' ? 'rgba(255, 23, 68, 0.5)' :
-                        detectionMetrics.drowsinessLevel === 'high' ? 'rgba(255, 82, 82, 0.5)' :
-                        detectionMetrics.drowsinessLevel === 'medium' ? 'rgba(255, 167, 38, 0.5)' :
-                        detectionMetrics.drowsinessLevel === 'low' ? 'rgba(255, 235, 59, 0.5)' :
-                        'rgba(76, 175, 80, 0.5)'
+                      boxShadow: `0 0 15px ${
+                        detectionMetrics.drowsinessLevel === 'critical' ? 'rgba(255, 23, 68, 0.4)' :
+                        detectionMetrics.drowsinessLevel === 'high' ? 'rgba(255, 82, 82, 0.4)' :
+                        detectionMetrics.drowsinessLevel === 'medium' ? 'rgba(255, 167, 38, 0.4)' :
+                        detectionMetrics.drowsinessLevel === 'low' ? 'rgba(255, 235, 59, 0.4)' :
+                        'rgba(76, 175, 80, 0.4)'
                       }`,
                     }}
                   >
-                    <Stack spacing={1}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Stack spacing={{ xs: 0.3, sm: 0.5, md: 0.7, lg: 0.8 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 0.4, sm: 0.6, md: 0.7, lg: 0.8 } }}>
                         <Box
                           sx={{
-                            width: 12,
-                            height: 12,
+                            width: { xs: 7, sm: 9, md: 11, lg: 12 },
+                            height: { xs: 7, sm: 9, md: 11, lg: 12 },
                             borderRadius: '50%',
                             backgroundColor: detectionMetrics.eyesClosed ? '#ff1744' : '#4caf50',
                             boxShadow: detectionMetrics.eyesClosed ? '0 0 10px #ff1744' : '0 0 10px #4caf50',
                             animation: detectionMetrics.eyesClosed ? 'pulse 1s infinite' : 'none',
                           }}
                         />
-                        <Typography sx={{ color: 'white', fontSize: '0.9rem', fontWeight: 600 }}>
-                          {detectionMetrics.eyesClosed ? '😴 OJOS CERRADOS' : '👀 Ojos Abiertos'}
+                        <Typography sx={{ 
+                          color: 'white', 
+                          fontSize: { xs: '0.55rem', sm: '0.65rem', md: '0.75rem', lg: '0.85rem' }, 
+                          fontWeight: 600,
+                          lineHeight: 1.2,
+                          whiteSpace: 'nowrap',
+                        }}>
+                          {detectionMetrics.eyesClosed ? '😴 OJOS CERRADOS' : '👀 Ojos'}
                         </Typography>
                       </Box>
                       
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 0.4, sm: 0.6, md: 0.7, lg: 0.8 } }}>
                         <Box
                           sx={{
-                            width: 12,
-                            height: 12,
+                            width: { xs: 7, sm: 9, md: 11, lg: 12 },
+                            height: { xs: 7, sm: 9, md: 11, lg: 12 },
                             borderRadius: '50%',
                             backgroundColor: detectionMetrics.yawning ? '#ffa726' : '#4caf50',
                             boxShadow: detectionMetrics.yawning ? '0 0 10px #ffa726' : '0 0 10px #4caf50',
                             animation: detectionMetrics.yawning ? 'pulse 1s infinite' : 'none',
                           }}
                         />
-                        <Typography sx={{ color: 'white', fontSize: '0.9rem', fontWeight: 600 }}>
-                          {detectionMetrics.yawning ? '🥱 BOSTEZANDO' : '😊 Sin Bostezo'}
+                        <Typography sx={{ 
+                          color: 'white', 
+                          fontSize: { xs: '0.55rem', sm: '0.65rem', md: '0.75rem', lg: '0.85rem' }, 
+                          fontWeight: 600,
+                          lineHeight: 1.2,
+                          whiteSpace: 'nowrap',
+                        }}>
+                          {detectionMetrics.yawning ? '🥱 BOSTEZANDO' : '😊 Boca'}
                         </Typography>
                       </Box>
 
-                      <Box sx={{ mt: 1, pt: 1, borderTop: '1px solid rgba(255, 255, 255, 0.2)' }}>
-                        <Typography sx={{ color: '#00d4ff', fontSize: '0.75rem', fontWeight: 600, mb: 0.5 }}>
-                          📊 EAR (Eye Aspect Ratio)
+                      <Box sx={{ mt: { xs: 0.2, sm: 0.3, md: 0.4 }, pt: { xs: 0.3, sm: 0.5, md: 0.7, lg: 0.8 }, borderTop: '1px solid rgba(255, 255, 255, 0.2)' }}>
+                        <Typography sx={{ 
+                          color: '#00d4ff', 
+                          fontSize: { xs: '0.5rem', sm: '0.6rem', md: '0.7rem', lg: '0.8rem' }, 
+                          fontWeight: 600, 
+                          mb: { xs: 0.2, sm: 0.3, md: 0.4 },
+                          lineHeight: 1.2,
+                          whiteSpace: 'nowrap',
+                        }}>
+                          📊 EAR
                         </Typography>
-                        <Box sx={{ display: 'flex', gap: 1 }}>
-                          <Typography sx={{ color: 'white', fontSize: '0.75rem' }}>
-                            Izq: {detectionMetrics.ear.left.toFixed(3)}
+                        <Box sx={{ display: 'flex', gap: { xs: 0.3, sm: 0.5, md: 0.7, lg: 0.8 } }}>
+                          <Typography sx={{ 
+                            color: 'white', 
+                            fontSize: { xs: '0.48rem', sm: '0.55rem', md: '0.65rem', lg: '0.75rem' },
+                            lineHeight: 1.2,
+                            whiteSpace: 'nowrap',
+                          }}>
+                            I: {detectionMetrics.ear.left.toFixed(2)}
                           </Typography>
-                          <Typography sx={{ color: 'white', fontSize: '0.75rem' }}>
-                            Der: {detectionMetrics.ear.right.toFixed(3)}
+                          <Typography sx={{ 
+                            color: 'white', 
+                            fontSize: { xs: '0.48rem', sm: '0.55rem', md: '0.65rem', lg: '0.75rem' },
+                            lineHeight: 1.2,
+                            whiteSpace: 'nowrap',
+                          }}>
+                            D: {detectionMetrics.ear.right.toFixed(2)}
                           </Typography>
-                          <Typography sx={{ color: '#00ffea', fontSize: '0.75rem', fontWeight: 700 }}>
-                            Prom: {detectionMetrics.ear.average.toFixed(3)}
+                          <Typography sx={{ 
+                            color: '#00ffea', 
+                            fontSize: { xs: '0.48rem', sm: '0.55rem', md: '0.65rem', lg: '0.75rem' }, 
+                            fontWeight: 700,
+                            lineHeight: 1.2,
+                            whiteSpace: 'nowrap',
+                          }}>
+                            P: {detectionMetrics.ear.average.toFixed(2)}
                           </Typography>
                         </Box>
                       </Box>
 
                       <Box>
-                        <Typography sx={{ color: '#7b2ff7', fontSize: '0.75rem', fontWeight: 600, mb: 0.5 }}>
-                          📊 MAR (Mouth Aspect Ratio)
+                        <Typography sx={{ 
+                          color: '#00d4ff', 
+                          fontSize: { xs: '0.5rem', sm: '0.6rem', md: '0.7rem', lg: '0.8rem' }, 
+                          fontWeight: 600, 
+                          mb: { xs: 0.2, sm: 0.3, md: 0.4 },
+                          lineHeight: 1.2,
+                          whiteSpace: 'nowrap',
+                        }}>
+                          📊 MAR
                         </Typography>
-                        <Typography sx={{ color: 'white', fontSize: '0.75rem' }}>
-                          Boca: {detectionMetrics.mar.ratio.toFixed(3)}
+                        <Typography sx={{ 
+                          color: '#00ffea', 
+                          fontSize: { xs: '0.48rem', sm: '0.55rem', md: '0.65rem', lg: '0.75rem' },
+                          fontWeight: 700,
+                          lineHeight: 1.2,
+                          whiteSpace: 'nowrap',
+                        }}>
+                          {detectionMetrics.mar.ratio.toFixed(2)}
                         </Typography>
                       </Box>
 
-                      <Box sx={{ mt: 1, pt: 1, borderTop: '1px solid rgba(255, 255, 255, 0.2)' }}>
-                        <Typography sx={{ color: '#ffa726', fontSize: '0.75rem', fontWeight: 600, mb: 0.5 }}>
-                          🎯 Nivel de Somnolencia
+                      <Box sx={{ mt: { xs: 0.2, sm: 0.3, md: 0.4 }, pt: { xs: 0.3, sm: 0.5, md: 0.7, lg: 0.8 }, borderTop: '1px solid rgba(255, 255, 255, 0.2)' }}>
+                        <Typography sx={{ 
+                          color: '#ffa726', 
+                          fontSize: { xs: '0.5rem', sm: '0.6rem', md: '0.7rem', lg: '0.8rem' }, 
+                          fontWeight: 600, 
+                          mb: { xs: 0.2, sm: 0.3, md: 0.4 },
+                          lineHeight: 1.2,
+                          whiteSpace: 'nowrap',
+                        }}>
+                          🎯 Nivel
                         </Typography>
                         <Chip
                           label={detectionMetrics.drowsinessLevel.toUpperCase()}
@@ -1058,23 +1372,35 @@ const DrowsinessDetection = () => {
                               '#4caf50',
                             color: 'white',
                             fontWeight: 700,
-                            fontSize: '0.7rem',
+                            fontSize: { xs: '0.45rem', sm: '0.55rem', md: '0.65rem', lg: '0.75rem' },
+                            height: { xs: 16, sm: 18, md: 22, lg: 26 },
+                            '& .MuiChip-label': {
+                              padding: { xs: '0 4px', sm: '0 6px', md: '0 10px', lg: '0 12px' },
+                            },
                           }}
                         />
                       </Box>
 
                       <Box>
-                        <Typography sx={{ color: '#4caf50', fontSize: '0.75rem', fontWeight: 600, mb: 0.5 }}>
-                          ✅ Confianza del Modelo
+                        <Typography sx={{ 
+                          color: '#4caf50', 
+                          fontSize: { xs: '0.5rem', sm: '0.6rem', md: '0.7rem', lg: '0.8rem' }, 
+                          fontWeight: 600, 
+                          mb: { xs: 0.2, sm: 0.3, md: 0.4 },
+                          lineHeight: 1.2,
+                          whiteSpace: 'nowrap',
+                        }}>
+                          ✅ Conf.
                         </Typography>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 0.3, sm: 0.5, md: 0.7, lg: 0.8 } }}>
                           <Box
                             sx={{
                               flex: 1,
-                              height: 6,
+                              height: { xs: 4, sm: 5, md: 6, lg: 7 },
                               backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                              borderRadius: 3,
+                              borderRadius: { xs: 2, sm: 2.5, md: 3 },
                               overflow: 'hidden',
+                              minWidth: { xs: 40, sm: 50, md: 60, lg: 70 },
                             }}
                           >
                             <Box
@@ -1087,7 +1413,13 @@ const DrowsinessDetection = () => {
                               }}
                             />
                           </Box>
-                          <Typography sx={{ color: 'white', fontSize: '0.75rem', fontWeight: 700, minWidth: 45 }}>
+                          <Typography sx={{ 
+                            color: '#4caf50', 
+                            fontSize: { xs: '0.48rem', sm: '0.55rem', md: '0.65rem', lg: '0.75rem' }, 
+                            fontWeight: 700, 
+                            lineHeight: 1.2,
+                            whiteSpace: 'nowrap',
+                          }}>
                             {(detectionMetrics.confidence * 100).toFixed(0)}%
                           </Typography>
                         </Box>
@@ -1130,7 +1462,7 @@ const DrowsinessDetection = () => {
                             Umbral EAR (Ojos)
                           </Typography>
                           <Typography sx={{ color: 'white', fontSize: '0.9rem', fontWeight: 700 }}>
-                            {'<'} 0.30
+                            {'<'} 0.29
                           </Typography>
                         </Box>
                       </Grid>
@@ -1187,6 +1519,39 @@ const DrowsinessDetection = () => {
                 </Box>
               )}
             </Paper>
+
+            {/* Selector de Modelo */}
+            {showModelSelector && (
+              <Paper
+                elevation={3}
+                sx={{
+                  p: 3,
+                  mt: 3,
+                  background: 'linear-gradient(145deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%)',
+                  backdropFilter: 'blur(20px)',
+                  border: '1px solid rgba(0, 212, 255, 0.2)',
+                  borderRadius: 4,
+                  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+                }}
+              >
+                <DetectionModelSelector
+                  selectedModel={currentModel}
+                  onModelChange={async (newModel) => {
+                    if (isDetecting) {
+                      setError('Detén la detección antes de cambiar de modelo');
+                      return;
+                    }
+                    try {
+                      await changeModel(newModel);
+                      setShowModelSelector(false);
+                    } catch (error) {
+                      setError('Error al cambiar modelo: ' + (error as Error).message);
+                    }
+                  }}
+                  showDetails={true}
+                />
+              </Paper>
+            )}
           </Grid>
 
           {/* Statistics Panel */}

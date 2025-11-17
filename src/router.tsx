@@ -9,6 +9,8 @@ import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import DrowsinessDetection from './pages/DrowsinessDetection';
 import UserManagement from './pages/UserManagement';
+import LiveMonitoring from './pages/LiveMonitoring';
+import VideoProcessing from './pages/VideoProcessing';
 
 // Función para verificar autenticación
 const requireAuth = () => {
@@ -63,6 +65,16 @@ export const router = createBrowserRouter([
   {
     path: '/users',
     element: <UserManagement />,
+    loader: requireAuth,
+  },
+  {
+    path: '/monitoring',
+    element: <LiveMonitoring />,
+    loader: requireAuth,
+  },
+  {
+    path: '/video-processing',
+    element: <VideoProcessing />,
     loader: requireAuth,
   },
 ]);

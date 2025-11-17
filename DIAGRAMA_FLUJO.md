@@ -462,46 +462,6 @@ flowchart TD
     style END fill:#9E9E9E,stroke:#616161,color:#fff
 ```
 
----
-
-## 🎨 CÓMO VISUALIZAR ESTOS DIAGRAMAS
-
-### **1. En GitHub (Automático)**
-- GitHub renderiza automáticamente los bloques ```mermaid
-- Sube este archivo y se verán como imágenes
-
-### **2. Mermaid Live Editor (Online)**
-- Ve a: https://mermaid.live/
-- Copia y pega el código de cualquier diagrama
-- Descarga como PNG/SVG
-
-### **3. VS Code con extensión**
-```bash
-# Instalar extensión
-code --install-extension bierner.markdown-mermaid
-```
-
-### **4. Exportar como PNG**
-```bash
-# Instalar mermaid-cli
-npm install -g @mermaid-js/mermaid-cli
-
-# Generar PNG de este archivo
-mmdc -i DIAGRAMA_FLUJO.md -o diagrams/
-```
-
----
-
-## 📝 VENTAJAS DE MERMAID
-
-✅ **Renderizado automático en GitHub**
-✅ **Versionable con Git** (texto plano)
-✅ **Fácil de modificar**
-✅ **Exportable a PNG/SVG/PDF**
-✅ **Soportado por GitHub, GitLab, Notion**
-✅ **No requiere herramientas externas**
-
----
 
 **Autor:** Rogeero Daniel Montufar Merma  
 **Proyecto:** VISION - Sistema de Detección de Somnolencia  

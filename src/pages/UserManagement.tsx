@@ -35,6 +35,7 @@ import {
   Person as PersonIcon,
   ArrowBack as ArrowBackIcon,
   Refresh as RefreshIcon,
+  DirectionsCar as DriverIcon,
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
@@ -86,11 +87,26 @@ const UserManagement: React.FC = () => {
     setError(null);
     setSuccess(null);
     try {
-      await api.put(`/user/${userId}/role`, { role: newRole });
+      console.log('Cambiando rol:', { userId, newRole, userName });
+      const response = await api.put(`/user/${userId}/role`, { role: newRole });
+      console.log('Respuesta del servidor:', response.data);
       setSuccess(`Rol de ${userName} actualizado a ${getRoleLabel(newRole)}`);
-      loadUsers();
+      
+      // Pequeño delay para asegurar que la base de datos se actualice
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // Recargar usuarios para reflejar el cambio
+      await loadUsers();
     } catch (error: any) {
-      setError(error.response?.data?.message || 'Error al cambiar rol');
+      const errorMessage = error.response?.data?.message || error.message || 'Error al cambiar rol';
+      setError(errorMessage);
+      console.error('Error al cambiar rol:', {
+        status: error.response?.status,
+        data: error.response?.data,
+        message: errorMessage,
+        userId,
+        newRole
+      });
     } finally {
       setUpdating(false);
     }
@@ -134,7 +150,7 @@ const UserManagement: React.FC = () => {
     }
   };
 
-  const getRoleColor = (role: string): 'error' | 'warning' | 'info' => {
+  const getRoleColor = (role: string): 'error' | 'warning' | 'info' | 'success' => {
     switch (role) {
       case 'admin':
         return 'error';
@@ -142,6 +158,8 @@ const UserManagement: React.FC = () => {
         return 'warning';
       case 'viewer':
         return 'info';
+      case 'driver':
+        return 'success';
       default:
         return 'info';
     }
@@ -155,6 +173,8 @@ const UserManagement: React.FC = () => {
         return 'Operador';
       case 'viewer':
         return 'Visualizador';
+      case 'driver':
+        return 'Conductor';
       default:
         return role;
     }
@@ -168,6 +188,8 @@ const UserManagement: React.FC = () => {
         return <OperatorIcon />;
       case 'viewer':
         return <ViewerIcon />;
+      case 'driver':
+        return <DriverIcon />;
       default:
         return <PersonIcon />;
     }
@@ -232,9 +254,11 @@ const UserManagement: React.FC = () => {
             Gestión de Usuarios
           </Typography>
           <Tooltip title="Recargar">
-            <IconButton color="inherit" onClick={loadUsers} disabled={loading || updating}>
-              <RefreshIcon />
-            </IconButton>
+            <span>
+              <IconButton color="inherit" onClick={loadUsers} disabled={loading || updating}>
+                <RefreshIcon />
+              </IconButton>
+            </span>
           </Tooltip>
         </Toolbar>
       </AppBar>
@@ -333,6 +357,32 @@ const UserManagement: React.FC = () => {
               </Typography>
               <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
                 Visualizadores
+              </Typography>
+            </Paper>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.4 }}
+            style={{ flex: 1 }}
+          >
+            <Paper
+              sx={{
+                p: 3,
+                background: 'linear-gradient(145deg, rgba(76, 175, 80, 0.1) 0%, rgba(76, 175, 80, 0.05) 100%)',
+                backdropFilter: 'blur(20px)',
+                border: '1px solid rgba(76, 175, 80, 0.3)',
+                borderRadius: 3,
+                textAlign: 'center',
+              }}
+            >
+              <DriverIcon sx={{ fontSize: 40, color: '#4caf50', mb: 1 }} />
+              <Typography variant="h4" sx={{ color: '#4caf50', fontWeight: 700 }}>
+                {users.filter((u) => u.rol === 'driver').length}
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
+                Conductores
               </Typography>
             </Paper>
           </motion.div>
@@ -491,6 +541,12 @@ const UserManagement: React.FC = () => {
                               Visualizador
                             </Box>
                           </MenuItem>
+                          <MenuItem value="driver">
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <DriverIcon sx={{ color: '#4caf50' }} />
+                              Conductor
+                            </Box>
+                          </MenuItem>
                         </Select>
                       </TableCell>
 
@@ -535,18 +591,20 @@ const UserManagement: React.FC = () => {
 
                       <TableCell>
                         <Tooltip title="Eliminar usuario">
-                          <IconButton
-                            color="error"
-                            onClick={() => handleDeleteClick(user)}
-                            disabled={updating}
-                            sx={{
-                              '&:hover': {
-                                background: 'rgba(255, 82, 82, 0.1)',
-                              },
-                            }}
-                          >
-                            <DeleteIcon />
-                          </IconButton>
+                          <span>
+                            <IconButton
+                              color="error"
+                              onClick={() => handleDeleteClick(user)}
+                              disabled={updating}
+                              sx={{
+                                '&:hover': {
+                                  background: 'rgba(255, 82, 82, 0.1)',
+                                },
+                              }}
+                            >
+                              <DeleteIcon />
+                            </IconButton>
+                          </span>
                         </Tooltip>
                       </TableCell>
                     </motion.tr>

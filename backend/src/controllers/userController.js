@@ -161,21 +161,25 @@ const updateUserRole = async (req, res) => {
   try {
     const { userId } = req.params;
     const { role } = req.body;
-    const adminId = req.user.userId;
-    const adminRole = req.user.rol;
+    const adminId = req.user.userId || req.user.id;
+    const adminRole = req.user.rol || req.user.role;
+
+    console.log('[updateUserRole] Datos recibidos:', { userId, role, adminId, adminRole });
 
     // Verificar que quien hace la solicitud es admin
     if (adminRole !== 'admin') {
+      console.log('[updateUserRole] Error: Usuario no es admin', { adminRole });
       return res.status(403).json({ 
         message: 'Solo los administradores pueden cambiar roles de usuarios' 
       });
     }
 
     // Validar que el rol sea válido
-    const validRoles = ['admin', 'operator', 'viewer'];
-    if (!validRoles.includes(role)) {
+    const validRoles = ['admin', 'operator', 'viewer', 'driver'];
+    if (!role || !validRoles.includes(role)) {
+      console.log('[updateUserRole] Error: Rol inválido', { role, validRoles });
       return res.status(400).json({ 
-        message: 'Rol inválido. Debe ser: admin, operator o viewer' 
+        message: `Rol inválido. Debe ser uno de: ${validRoles.join(', ')}` 
       });
     }
 
